@@ -19,6 +19,8 @@
 #' # vte_prs <- create_prs(vte_extracted_variants, vte_gwas_info)
 #' # hist(vte_prs$prs$prs)
 #' @export
+#' @import PRISMAstatement "flow_exclusions"
+#' @import metafor
 
 create_prs <- function(variant_data, # expects an object of format output by extract_variants()
                        gwas_info, # expects an object of format output by get_trait_variants()
@@ -32,7 +34,6 @@ create_prs <- function(variant_data, # expects an object of format output by ext
                        scale=FALSE, # center and standardize the score
                        flowchart=TRUE){
   start_time <- Sys.time()
-  require(metafor)
   # create empty result and exclusions list ----
   res_list <- list()
   e <- list()
@@ -276,30 +277,29 @@ create_prs <- function(variant_data, # expects an object of format output by ext
   end_time <- Sys.time()
   cat('> Creation of the PRS took',difftime(end_time,start_time,units='secs'),'seconds.\n')
   if(flowchart==TRUE){
-    library(PRISMAstatement)
-    print(flow_exclusions(incl_counts=c(e[1],
-                                        e[1]-e[2],
-                                        e[1]-e[2]-e[3],
-                                        e[1]-e[2]-e[3]-e[4],
-                                        e[1]-e[2]-e[3]-e[4]-sum(e[5:6]),
-                                        e[1]-e[2]-e[3]-e[4]-sum(e[5:6])-e[10],
-                                        e[1]-e[2]-e[3]-e[4]-sum(e[5:6])-e[10]-e[11],
-                                        e[1]-e[2]-e[3]-e[4]-sum(e[5:6])-e[10]-e[11]-e[12]),
-                          total_label='Total variants retrieved',
-                          incl_labels=c('High imputation quality variants',
-                                        'Variants with non-zero variance',
-                                        'Variants reported in GWAS catalog',
-                                        'Variants with complete information',
-                                        'Variants with non-extreme effect sizes',
-                                        'Variants sufficiently independent',
-                                        'Variants used in the weighted score'),
-                          excl_labels=c(paste0('Low imputation quality (R^2<',imp_threshold,')'),
-                                        'Variants with zero variance in the data',
-                                        'Variants not found in GWAS catalog information',
-                                        'Missing effect size or risk allele',
-                                        'Variants with extreme effect sizes (99th percentile)',
-                                        'Variants in high LD with other included variants with higher MAF',
-                                        paste0('Variants with p-value above threshold (',pval_threshold,')'))))
+    print(PRISMAstatement::flow_exclusions(incl_counts=c(e[1],
+                                           e[1]-e[2],
+                                           e[1]-e[2]-e[3],
+                                           e[1]-e[2]-e[3]-e[4],
+                                           e[1]-e[2]-e[3]-e[4]-sum(e[5:6]),
+                                           e[1]-e[2]-e[3]-e[4]-sum(e[5:6])-e[10],
+                                           e[1]-e[2]-e[3]-e[4]-sum(e[5:6])-e[10]-e[11],
+                                           e[1]-e[2]-e[3]-e[4]-sum(e[5:6])-e[10]-e[11]-e[12]),
+                           total_label='Total variants retrieved',
+                           incl_labels=c('High imputation quality variants',
+                                         'Variants with non-zero variance',
+                                         'Variants reported in GWAS catalog',
+                                         'Variants with complete information',
+                                         'Variants with non-extreme effect sizes',
+                                         'Variants sufficiently independent',
+                                         'Variants used in the weighted score'),
+                           excl_labels=c(paste0('Low imputation quality (R^2<',imp_threshold,')'),
+                                         'Variants with zero variance in the data',
+                                         'Variants not found in GWAS catalog information',
+                                         'Missing effect size or risk allele',
+                                         'Variants with extreme effect sizes (99th percentile)',
+                                         'Variants in high LD with other included variants with higher MAF',
+                                         paste0('Variants with p-value above threshold (',pval_threshold,')'))))
   }
   invisible(return(res_list))
 }

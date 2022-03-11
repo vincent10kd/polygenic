@@ -15,7 +15,7 @@ get_pQTLs <- function(gene_symbol,
                       risk_frequency=TRUE,
                       is_cis=TRUE){
   starttime <- Sys.time()
-  data("pQTL_list")
+  data("pQTL_list", envir=environment())
   if(is_cis==TRUE){
     pQTL_list <- subset(pQTL_list, CisOrTrans=='cis')
   }
