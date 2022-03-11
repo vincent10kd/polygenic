@@ -19,7 +19,7 @@
 #' # vte_prs <- create_prs(vte_extracted_variants, vte_gwas_info)
 #' # hist(vte_prs$prs$prs)
 #' @export
-#' @import PRISMAstatement "flow_exclusions"
+#' @importFrom PRISMAstatement "flow_exclusions"
 #' @import metafor
 
 create_prs <- function(variant_data, # expects an object of format output by extract_variants()

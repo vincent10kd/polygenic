@@ -18,6 +18,8 @@
 #' @export
 #' @importFrom biomaRt "useMart" "getBM"
 #' @importFrom Rsamtools "TabixFile" "seqnamesTabix"
+#' @importFrom SummarizedExperiment "rowRanges"
+#' @importFrom IRanges "IRanges"
 #' @import GenomicRanges
 #' @import VariantAnnotation
 

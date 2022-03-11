@@ -11,7 +11,6 @@
 #'
 
 init_gwas_dbs <- function(){
-  require(gwasrapidd)
   gwas_catalog_query_date <- Sys.Date()
   all_traits <- gwasrapidd::get_traits()
   trait_list <- list(all_traits=all_traits, query_date=gwas_catalog_query_date)

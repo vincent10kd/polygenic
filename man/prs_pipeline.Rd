@@ -38,6 +38,8 @@ prs_pipeline(
 \item{keep_all}{If TRUE, keeps all variants in the search range, even those not in gwas_info.}
 
 \item{binary_outcome}{Set to TRUE for binary traits, and FALSE for continuous outcomes (including pQTLs).}
+
+\item{...}{Any other argument to pass to create_prs().}
 }
 \value{
 A list containing several data.frames with all relevant information. The risk score is stored in element 'prs'.

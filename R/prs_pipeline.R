@@ -12,6 +12,7 @@
 #' @param grch37 If TRUE, the build is grch37; if FALSE, grch38 is used.
 #' @param keep_all If TRUE, keeps all variants in the search range, even those not in gwas_info.
 #' @param binary_outcome Set to TRUE for binary traits, and FALSE for continuous outcomes (including pQTLs).
+#' @param ... Any other argument to pass to create_prs().
 #'
 #' @return A list containing several data.frames with all relevant information. The risk score is stored in element 'prs'.
 #' @examples
@@ -26,7 +27,7 @@
 #' @import GenomicRanges
 #' @import VariantAnnotation
 #' @import metafor
-#' @import PRISMAstatement "flow_exclusions"
+#' @importFrom PRISMAstatement "flow_exclusions"
 
 prs_pipeline <- function(trait=NULL,
                          trait_list=NULL,

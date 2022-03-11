@@ -22,4 +22,6 @@ Imports:
     biomaRt,
     PRISMAstatement,
     metafor,
-    methods
+    methods,
+    SummarizedExperiment,
+    IRanges
