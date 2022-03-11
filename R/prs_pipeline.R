@@ -1,4 +1,4 @@
-#' @title prs_pipeline
+#' @title User-friendly pipeline to retrieve variants and convert them into a polygenic risk score
 #'
 #' @description A pipeline creating a polygenic risk score from start to finish.
 #'

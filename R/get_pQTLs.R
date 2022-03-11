@@ -1,4 +1,4 @@
-#' @title get_pQTLs
+#' @title Retrieve protein quantitative trait loci (pQTLs) with summary statistics
 #'
 #' @description Returns a formatted data.frame of variants for a given gene symbol, including summary statistics
 #'

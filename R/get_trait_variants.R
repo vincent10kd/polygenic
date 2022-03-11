@@ -1,4 +1,4 @@
-#' @title get_trait_variants
+#' @title Retrieve trait-related variants and summary statistics from the GWAS catalog
 #'
 #' @description Returns a formatted data.frame of variants for a given trait, including summary statistics
 #'

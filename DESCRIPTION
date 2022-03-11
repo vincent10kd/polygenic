@@ -1,12 +1,20 @@
 Package: polygenic
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Efficient and User-friendly P+T Polygenic Risk Score Creation with Summary Statistics
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+Author: Vincent ten Cate, PhD
+Maintainer: Vincent ten Cate, PhD <vincent10kd@gmail.com>
+Description: An efficient and user-friendly pipeline to retrieve trait-related genetic variants 
+    (including pQTLS) previously identified in genome-wide association studies (GWAS), to quickly 
+    extract them from chromosome .vcf files and Tabix files, and to convert them into a pruning + 
+    thresholding polygenic risk score (PRS) based on GWAS summary statistics. 
+License: -
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.1.2
+Imports: 
+    gwasrapidd,
+    VariantAnnotation,
+    Rsamtools,
+    GenomicRanges,
+    biomaRt

@@ -1,4 +1,4 @@
-#' @title create_prs
+#' @title Pruning+thresholding polygenic risk score creation based on summary statistics
 #'
 #' @description Create a polygenic risk score based on summary statistics from prior GWAS/pQTL discovery studies.
 #'

@@ -1,4 +1,4 @@
-#' @title extract_variants
+#' @title Targeted extraction of variants from .vcf files using Tabix files
 #'
 #' @description Performs targeted extraction of variants from chromosome .vcf files using Tabix index (.tbi) files.
 #'
@@ -36,19 +36,19 @@ extract_variants <- function(chr_files, # chromosome vcf files
   }
   if(grch37==TRUE){
     cat('> Using the grch37 build to retrieve positions.\n')
-    usemart <- useMart(biomart = "ENSEMBL_MART_SNP", host = "grch37.ensembl.org",
-                       dataset = "hsapiens_snp")
-    posdf <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start"),
-                   filters = c("snp_filter"),
-                   values = list(snp_filter = g$variant_id), mart = usemart)
+    usemart <- biomaRt::useMart(biomart = "ENSEMBL_MART_SNP", host = "grch37.ensembl.org",
+                        dataset = "hsapiens_snp")
+    posdf <- biomaRt::getBM(attributes = c("refsnp_id", "chr_name", "chrom_start"),
+                      filters = c("snp_filter"),
+                      values = list(snp_filter = g$variant_id), mart = usemart)
   }
   else{
     cat('> Using the grch38 build to retrieve positions.\n')
-    usemart <- useMart(biomart = "ENSEMBL_MART_SNP",
-                       dataset = "hsapiens_snp")
-    posdf <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start"),
-                   filters = c("snp_filter"),
-                   values = list(snp_filter = g$variant_id), mart = usemart)
+    usemart <- biomaRt::useMart(biomart = "ENSEMBL_MART_SNP",
+                        dataset = "hsapiens_snp")
+    posdf <- biomaRt::getBM(attributes = c("refsnp_id", "chr_name", "chrom_start"),
+                      filters = c("snp_filter"),
+                      values = list(snp_filter = g$variant_id), mart = usemart)
   }
   valid_chroms <- seq(1,22)
   if(autosomes==FALSE){
@@ -67,8 +67,8 @@ extract_variants <- function(chr_files, # chromosome vcf files
   for(chrom in 1:length(unique(posdf$chr_name))){
     chr <- unique(posdf$chr_name)[chrom]
     cat('> Extracting variants in chromosome',chr,'\n')
-    tabix <- TabixFile(files[as.numeric(chr)])
-    tabix_seq <- seqnamesTabix(tabix)
+    tabix <- Rsamtools::TabixFile(files[as.numeric(chr)])
+    tabix_seq <- Rsamtools::seqnamesTabix(tabix)
     if(tabix_seq!=chr){
       warning('Tabix seqnames do not match the chromosome name (',chr,').')
     }
@@ -78,13 +78,13 @@ extract_variants <- function(chr_files, # chromosome vcf files
     }
     res <- lapply(1:nrow(d),function(s){
       cat('** Searching for variant',s,'of',nrow(d),'\n')
-      rng <- GRanges(seqnames=tabix_seq,
-                     ranges=IRanges(d$chrom_start[s],d$chrom_start[s]+range))
-      ext <- readVcf(tabix, genome=paste0('chr',chr), param=rng)
-      fix <- data.frame(rowRanges(ext))
+      rng <- GenomicRanges::GRanges(seqnames=tabix_seq,
+                     ranges=IRanges::IRanges(d$chrom_start[s],d$chrom_start[s]+range))
+      ext <- VariantAnnotation::readVcf(tabix, genome=paste0('chr',chr), param=rng)
+      fix <- data.frame(SummarizedExperiment::rowRanges(ext))
       info <- info(ext)
       info <- cbind(fix,info)
-      ext <- genotypeToSnpMatrix(ext)
+      ext <- VariantAnnotation::genotypeToSnpMatrix(ext)
       ext <- as(ext$genotype,'numeric')
       list(ext=ext, info=info)
     })
