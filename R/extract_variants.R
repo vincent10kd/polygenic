@@ -13,11 +13,11 @@
 #' containing information on the variants: rsid, chromosome, position, reference and alternative allele,
 #' and imputation quality information (e.g. DR2).
 #' @examples
-#' TG_gwas_info <- get_trait_variants('thrombin generation',trait_list=NULL,ask_about_efo=FALSE)
+#' \donttest{TG_gwas_info <- get_trait_variants('thrombin generation',trait_list=NULL,ask_about_efo=FALSE)}
 #' # TG_variants <- extract_variants(chromosome_files, TG_gwas_info)
 #' @export
-#' @importFrom biomaRt useMart getBM
-#' @importFrom Rsamtools TabixFile seqnamesTabix
+#' @importFrom biomaRt "useMart" "getBM"
+#' @importFrom Rsamtools "TabixFile" "seqnamesTabix"
 #' @import GenomicRanges
 #' @import VariantAnnotation
 

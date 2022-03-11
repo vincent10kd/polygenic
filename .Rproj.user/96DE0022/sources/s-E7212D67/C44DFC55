@@ -1,25 +1,25 @@
 {
     "collab_server" : "",
     "contents" : "",
-    "created" : 1647003320176.000,
+    "created" : 1647009480811.000,
     "dirty" : false,
     "encoding" : "UTF-8",
     "folds" : "",
     "hash" : "0",
-    "id" : "3545A14F",
-    "lastKnownWriteTime" : 1647004266,
-    "last_content_update" : 1647004266175,
-    "path" : "~/polygenic/R/get_pQTLs.R",
-    "project_path" : "R/get_pQTLs.R",
+    "id" : "C44DFC55",
+    "lastKnownWriteTime" : 1647010520,
+    "last_content_update" : 1647010520925,
+    "path" : "~/polygenic/R/prs_pipeline.R",
+    "project_path" : "R/prs_pipeline.R",
     "properties" : {
-        "cursorPosition" : "10,3",
+        "cursorPosition" : "21,37",
         "scrollLine" : "0",
         "tempName" : "Untitled1"
     },
     "read_only" : false,
     "read_only_alternatives" : [
     ],
-    "relative_order" : 6,
+    "relative_order" : 7,
     "source_on_save" : false,
     "source_window" : "",
     "type" : "r_source"

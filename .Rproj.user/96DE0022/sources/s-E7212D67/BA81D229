@@ -5,21 +5,21 @@
     "dirty" : false,
     "encoding" : "UTF-8",
     "folds" : "",
-    "hash" : "4108531286",
+    "hash" : "0",
     "id" : "BA81D229",
     "lastKnownWriteTime" : 1647008178,
     "last_content_update" : 1647008178419,
     "path" : "~/polygenic/R/create_prs.R",
     "project_path" : "R/create_prs.R",
     "properties" : {
-        "cursorPosition" : "20,10",
+        "cursorPosition" : "7,39",
         "scrollLine" : "0",
         "tempName" : "Untitled1"
     },
     "read_only" : false,
     "read_only_alternatives" : [
     ],
-    "relative_order" : 7,
+    "relative_order" : 4,
     "source_on_save" : false,
     "source_window" : "",
     "type" : "r_source"

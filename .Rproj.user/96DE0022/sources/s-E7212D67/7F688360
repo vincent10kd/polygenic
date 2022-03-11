@@ -12,14 +12,14 @@
     "path" : "~/Projects/polygenic/polygenic.R",
     "project_path" : null,
     "properties" : {
-        "cursorPosition" : "625,0",
+        "cursorPosition" : "287,5",
         "docOutlineVisible" : "1",
-        "scrollLine" : "622"
+        "scrollLine" : "272"
     },
     "read_only" : false,
     "read_only_alternatives" : [
     ],
-    "relative_order" : 2,
+    "relative_order" : 8,
     "source_on_save" : false,
     "source_window" : "",
     "type" : "r_source"

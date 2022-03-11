@@ -7,7 +7,7 @@
 #' @examples
 #' trait_list <- init_gwas_db()
 #' @export
-#' @importFrom gwasrapidd "get_traits"
+#' @importFrom gwasrapidd get_traits
 #'
 
 init_gwas_dbs <- function(){
