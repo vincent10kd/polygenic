@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1647001824484.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "7F688360",
+    "lastKnownWriteTime" : 1646997043,
+    "last_content_update" : 1646997043,
+    "path" : "~/Projects/polygenic/polygenic.R",
+    "project_path" : null,
+    "properties" : {
+        "cursorPosition" : "625,0",
+        "docOutlineVisible" : "1",
+        "scrollLine" : "622"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

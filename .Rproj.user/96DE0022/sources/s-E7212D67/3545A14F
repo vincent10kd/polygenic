@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1647003320176.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1740327693",
+    "id" : "3545A14F",
+    "lastKnownWriteTime" : 1647004266,
+    "last_content_update" : 1647004266175,
+    "path" : "~/polygenic/R/get_pQTLs.R",
+    "project_path" : "R/get_pQTLs.R",
+    "properties" : {
+        "cursorPosition" : "12,0",
+        "scrollLine" : "0",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 5,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

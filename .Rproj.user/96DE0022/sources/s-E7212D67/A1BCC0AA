@@ -5,13 +5,15 @@
     "dirty" : false,
     "encoding" : "UTF-8",
     "folds" : "",
-    "hash" : "3920630657",
+    "hash" : "0",
     "id" : "A1BCC0AA",
-    "lastKnownWriteTime" : 1646997282,
-    "last_content_update" : 1646997282,
-    "path" : "~/polygenic/R/hello.R",
-    "project_path" : "R/hello.R",
+    "lastKnownWriteTime" : 1647002094,
+    "last_content_update" : 1647002094223,
+    "path" : "~/polygenic/R/init_gwas_db.R",
+    "project_path" : "R/init_gwas_db.R",
     "properties" : {
+        "cursorPosition" : "6,12",
+        "scrollLine" : "0"
     },
     "read_only" : false,
     "read_only_alternatives" : [

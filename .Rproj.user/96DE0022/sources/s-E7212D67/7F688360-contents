@@ -1,0 +1,802 @@
+#==============================================================================#
+# Title: polygenic - efficient and user-firendly polgenic risk score creation  #
+# Author: vincent.tencate@unimedizin-mainz.de                                  #
+# Last updated: 11.03.2022                                                     #
+#==============================================================================#
+
+# Initialize ----
+
+init_gwas_dbs <- function(){
+  if(!'remotes'%in%installed.packages()) install.packages("remotes")
+  if(!'gwasrapidd'%in%installed.packages()) install.packages("gwasrapidd")
+  if(!'ieugwasr'%in%installed.packages()) remotes::install_github("mrcieu/ieugwasr")
+  library(gwasrapidd)
+  gwas_catalog_query_date <- Sys.Date()
+  all_traits <- get_traits()
+  trait_list <- list(all_traits=all_traits, query_date=gwas_catalog_query_date)
+  return(trait_list)
+}
+
+trait_list <- init_gwas_dbs() # run once
+
+# Get trait variants from GWAS catalog ----
+get_trait_variants <- function(trait,
+                     trait_list=NULL, # expects list output from init_gwas_dbs
+                     risk_frequency=TRUE,
+                     mapped_gene=FALSE,
+                     ask_about_efo=TRUE){
+  starttime <- Sys.time()
+  if(is.null(trait_list)){
+    trait_list <- init_gwas_dbs()
+    all_traits <- trait_list$all_traits
+  }
+  else{all_traits <- trait_list$all_traits}
+  efo_df <- all_traits@traits[grepl(trait, all_traits@traits$trait),]
+  cat('\nThe EFO ids for',trait,'are shown below:\n\n')
+  print(efo_df)
+  if(nrow(efo_df)<1) stop('No variants have been identified in relation to the named trait(s).')
+  if(ask_about_efo==TRUE){
+    efo_ind <- readline('\nWhich of these traits would you like to obtain the SNPs for? Indicate as numeric vector:\n')
+    efo_ind <- eval(parse(text=efo_ind))
+    if(!class(efo_ind)%in%c('numeric','integer')){
+      stop('You did not enter a valid numeric vector. Please try again.')
+    }
+    cat('\nYou have selected these EFO ids:\n\n')
+    print(efo_df[efo_ind,])
+    efo_df <- efo_df[efo_ind,]
+  }
+  cat('\nRetrieving GWAS catalog-identified variants and corresponding information for these EFO identifiers...\n')
+  retrieve_SNPs <- get_associations(efo_id = efo_df$efo_id)
+  SNPs_with_effectsizes <- retrieve_SNPs@associations[c('association_id','beta_number',
+                                                        'standard_error','or_per_copy_number',
+                                                        'pvalue')]
+  beta_sign <- ifelse(retrieve_SNPs@associations$beta_direction=='increase',1,-1)
+  SNPs_with_effectsizes$beta_number <- ifelse(is.na(beta_sign),
+                                              SNPs_with_effectsizes$beta_number,
+                                              SNPs_with_effectsizes$beta_number*beta_sign)
+  colnames(SNPs_with_effectsizes)[2] <- 'beta_coefficient'
+  SNPs_risk_alleles <- retrieve_SNPs@risk_alleles
+  SNPs_risk_alleles <- merge(SNPs_risk_alleles[c('association_id','variant_id','risk_allele')],
+                             SNPs_with_effectsizes,by='association_id',all.x=TRUE)
+
+  if(risk_frequency==TRUE){
+    cat('>Obtaining risk allele frequency\n')
+    SNPs_risk_alleles <- merge(SNPs_risk_alleles, 
+                               retrieve_SNPs@risk_alleles[c('association_id','risk_frequency')],
+                               by='association_id',all.x=TRUE)
+  }
+  if(mapped_gene==TRUE){
+    cat('>Collecting mapped genes\n')
+    SNPs_risk_alleles <- merge(SNPs_risk_alleles, 
+                               retrieve_SNPs@genes[c('association_id','gene_name')],
+                               by='association_id',all.x=TRUE)
+  }
+  SNPs_risk_alleles <- SNPs_risk_alleles[,-which(colnames(SNPs_risk_alleles)=='association_id')]
+  endtime <- Sys.time()
+  cat('\nRetrieving the information took',difftime(endtime,starttime,units='secs'),'seconds.\n')
+  rm(starttime,endtime)
+  return(invisible(SNPs_risk_alleles))
+}
+
+## examples: MI, Afib
+mi_gwas_info <- get_trait_variants('MI|myocardial infarction', trait_list=trait_list)
+afib_gwas_info <- get_trait_variants('AF|atrial fibrillation', trait_list=trait_list)
+cad_gwas_info <- get_trait_variants('CAD|coronary artery disease', trait_list=trait_list)
+stroke_gwas_info <- get_trait_variants('stroke|TIA|transient ischemic', trait_list=trait_list)
+obesity_gwas_info <- get_trait_variants('obesity|body mass|BMI', trait_list=trait_list)
+hf_gwas_info <- get_trait_variants('heart failure', trait_list=trait_list)
+TG_gwas_info <- get_trait_variants('thrombin generation',trait_list=NULL)
+vte_gwas_info <- get_trait_variants('venous thromboembolism|pulmonary embolism|deep vein throm', trait_list=trait_list)
+
+
+# Get pQTL for a given protein ----
+require(openxlsx)
+pQTL_list <- read.xlsx('~/Projects/pQTLs/pQTLs_cis_trans_Olink.xlsx')
+
+get_pQTLs <- function(gene_symbol,
+                      pQTL_list=NULL, # use list from Eldjarn et al. 2022 (BioRxiv)
+                      risk_frequency=TRUE,
+                      is_cis=TRUE){
+  starttime <- Sys.time()
+  if(is.null(pQTL_list)) stop('pQTL_list cannot be NULL.')
+  if(is_cis==TRUE){
+    pQTL_list <- subset(pQTL_list, CisOrTrans=='cis')
+  }
+  if(!gene_symbol%in%unique(pQTL_list$Affected.Protein.Gene.name)) stop('Gene symbol not found.')
+  pQTL_list <- pQTL_list[pQTL_list$Affected.Protein.Gene.name==gene_symbol,]
+  
+  SNPs_risk_alleles <- pQTL_list[c('rsName','Amin','Effect.Amin.adj',
+                                   'Log10.pval.gc.cor.adj')]
+  colnames(SNPs_risk_alleles) <- c('variant_id','risk_allele','beta_coefficient','pvalue')
+  SNPs_risk_alleles$variant_id <- gsub(',.*','',SNPs_risk_alleles$variant_id)
+  SNPs_risk_alleles$pvalue <- 10^(-1*as.numeric(SNPs_risk_alleles$pvalue))
+  SNPs_risk_alleles$beta_coefficient <- as.numeric(SNPs_risk_alleles$beta_coefficient)
+  SNPs_risk_alleles$standard_error <- rep(NA,nrow(SNPs_risk_alleles))
+  SNPs_risk_alleles$or_per_copy_number <- rep(NA,nrow(SNPs_risk_alleles))
+  SNPs_risk_alleles <- SNPs_risk_alleles[,c(1:3,5:6,4)]
+  SNPs_risk_alleles$chrom <- pQTL_list$Chrom
+  SNPs_risk_alleles$pos <- pQTL_list$Pos
+  
+  if(risk_frequency==TRUE){
+    cat('>Obtaining risk allele frequency\n')
+    SNPs_risk_alleles$risk_frequency <- as.numeric(pQTL_list[,'MAF.PC'])/100
+  }
+  
+  endtime <- Sys.time()
+  cat('\nRetrieving the information took',difftime(endtime,starttime,units='secs'),'seconds.\n')
+  rm(starttime,endtime)
+  return(invisible(SNPs_risk_alleles))
+}
+
+PLAU_pqtls <- get_pQTLs('PLAU',pQTL_list)
+CXCL12_pqtls <- get_pQTLs('CXCL12',pQTL_list)
+ACE2_pqtls <- get_pQTLs('ACE2',pQTL_list, is_cis=FALSE)
+
+
+## extract_variants() function ----
+extract_variants <- function(chr_files, # chromosome vcf files
+                             gwas_info, # output from get_trait_variants/get_pQTLs or a vector
+                             autosomes=TRUE, # will only consider autosomes when TRUE
+                             range=0, # search for variants from start position+range (in bp)
+                             grch37=TRUE, # if FALSE, the build is grch38
+                             keep_all=FALSE)# if TRUE, keeps all variants in the search range
+                             { 
+  start_time <- Sys.time()
+  pacman::p_load(Rsamtools, GenomicRanges, VariantAnnotation, biomaRt)
+  files <- chr_files
+  g <- gwas_info
+  if(class(g)=='character'){
+    g <- data.frame(variant_id=g)
+  }
+  if(grch37==TRUE){
+    cat('> Using the grch37 build to retrieve positions.\n')
+    usemart <- useMart(biomart = "ENSEMBL_MART_SNP", host = "grch37.ensembl.org", 
+                       dataset = "hsapiens_snp")
+    posdf <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start"), 
+                   filters = c("snp_filter"), 
+                   values = list(snp_filter = g$variant_id), mart = usemart)
+  }
+  else{
+    cat('> Using the grch38 build to retrieve positions.\n')
+    usemart <- useMart(biomart = "ENSEMBL_MART_SNP", 
+                       dataset = "hsapiens_snp")
+    posdf <- getBM(attributes = c("refsnp_id", "chr_name", "chrom_start"), 
+                   filters = c("snp_filter"), 
+                   values = list(snp_filter = g$variant_id), mart = usemart)
+  }
+  valid_chroms <- seq(1,22)
+  if(autosomes==FALSE){
+    valid_chroms <- c(valid_chroms,'X','Y')
+  }
+  posdf <- posdf[posdf$chr_name%in%valid_chroms,]
+  if(nrow(posdf)==0){
+    stop('No variants found in the specified chromosomes. Try autosomes=FALSE.\n')
+  }
+  if(autosomes==FALSE){
+    posdf$chr_name[which(posdf$chr_name=='X')] <- 23
+    posdf$chr_name[which(posdf$chr_name=='Y')] <- 24
+  }
+  posdf <- posdf[order(as.numeric(posdf$chr_name),decreasing=FALSE),]
+  chr_list <- chr_list2 <- list()
+  for(chrom in 1:length(unique(posdf$chr_name))){
+    chr <- unique(posdf$chr_name)[chrom]
+    cat('> Extracting variants in chromosome',chr,'\n')
+    tabix <- TabixFile(files[as.numeric(chr)])
+    tabix_seq <- seqnamesTabix(tabix)
+    if(tabix_seq!=chr){
+      warning('Tabix seqnames do not match the chromosome name (',chr,').')
+      }
+    d <- posdf[posdf$chr_name==chr,]
+    if(chr%in%23:24){
+      chr <- c(seq(1,22),c('X','Y'))[as.numeric(chr)]
+    }
+    res <- lapply(1:nrow(d),function(s){
+      cat('** Searching for variant',s,'of',nrow(d),'\n')
+      rng <- GRanges(seqnames=tabix_seq,
+                     ranges=IRanges(d$chrom_start[s],d$chrom_start[s]+range))
+      ext <- readVcf(tabix, genome=paste0('chr',chr), param=rng)
+      fix <- data.frame(rowRanges(ext))
+      info <- info(ext)
+      info <- cbind(fix,info)
+      ext <- genotypeToSnpMatrix(ext)
+      ext <- as(ext$genotype,'numeric')
+      list(ext=ext, info=info)
+      })
+    chr_list[[chrom]] <- do.call('cbind',lapply(res,function(x) x$ext))
+    chr_list2[[chrom]] <- do.call('rbind',lapply(res,function(x) x$info))
+  }
+  out_df <- data.frame(do.call('cbind',chr_list))
+  out_df2 <- data.frame(do.call('rbind',chr_list2))
+  out_df2[,3:6] <- NULL
+  out_df2$ID <- rownames(out_df2)
+  colnames(out_df2)[1:2] <- c('CHROM','POS')
+  out_df2 <- out_df2[,c(ncol(out_df2),1:(ncol(out_df2)-1))]
+  out_df2$ALT <- unlist(lapply(out_df2$ALT, function(x) as.character(x[[1]])))
+  found <- sum(unique(g$variant_id)%in%colnames(out_df))
+  if(keep_all==FALSE){
+    out_df <- out_df[,which(colnames(out_df)%in%g$variant_id)]
+    out_df2 <- out_df2[which(rownames(out_df2)%in%g$variant_id),]
+  }
+  cat('> Succesfully retrieved',found,'of',length(unique(g$variant_id)),'variants.\n')
+  end_time <- Sys.time()
+  cat('> Extraction of the variants took',difftime(end_time,start_time,units='secs'),'seconds.\n')
+  return(list(gt=out_df,
+              fix=out_df2))
+}
+
+
+
+## vcf files ----
+
+vcf_filelist <- paste0('M:/GHS/DC/_6_Genetic/Genotypisierung2018/imputed_100GP3_beagle_5_0/GHS_2018_EURHD_imputed_1000G_v4_chr',1:22,'.vcf.gz')
+vcf_files_myo <- paste0('M:/Myovasc/DC/Genotypisierung/imputed_1000GP3_beagle_5_0/MyoVasc_2006_OminExpE8_imputed_1000G_chr',1:22,'.vcf.gz')
+vcf_files_myo2 <- paste0('M:/Myovasc/DC/Genotypisierung/imputed_1000GP3_beagle_5_0/MyoVasc_201812_OminEURHD_imputed_1000G_chr',1:22,'.vcf.gz')
+vcf_files_myo2 <- c(vcf_files_myo2,
+                    'M:/Myovasc/DC/Genotypisierung/imputed_1000GP3_beagle_5_0/MyoVasc_201812_OminEURHD_imputed_1000G_chrX_v2.vcf.gz')
+
+# examples
+out_TG <- extract_variants(vcf_files_myo2, TG_gwas_info)
+out_CXCL12 <- extract_variants(vcf_files_myo2, CXCL12_pqtls)
+out_ACE2 <- extract_variants(vcf_files_myo2, ACE2_pqtls, autosomes=FALSE)
+out_bmi <- extract_variants(vcf_files_myo2, obesity_gwas_info)
+out_hf <- extract_variants(vcf_files_myo2, hf_gwas_info)
+out_vte <- extract_variants(vcf_files_myo2, vte_gwas_info)
+
+out_MI <- extract_variants(vcf_files_myo2, mi_gwas_info)
+
+# test with a character vector as input
+test_vec <- mi_gwas_info$variant_id[1:10]
+out_test <- extract_variants(vcf_files_myo2, gwas_info=test_vec)
+
+# extract TG variants for both MyoVasc genotyping arrays
+out_TG_myo <- extract_variants(vcf_files_myo, TG_gwas_info)
+out_TG_myo2 <- extract_variants(vcf_files_myo2, TG_gwas_info)
+all(out_TG_myo$fix$REF==out_TG_myo2$REF)
+
+out_TG_myo_comb <- list(gt=rbind(out_TG_myo$gt,
+                                 out_TG_myo2$gt),
+                        fix=out_TG_myo2$fix)
+
+out_TG_myo_comb$fix$DR2 <- pmin(out_TG_myo$fix$DR2,out_TG_myo2$fix$DR2)
+
+
+## check for errors in vcf files and tbi files
+for(i in 1:22){
+  print(i)
+  tv <- tryCatch(readVcf(TabixFile(vcf_files_myo[i]), 
+                         genome=paste0('chr',i), 
+                         param=GRanges(seqnames=i, ranges=IRanges(0,1))),
+                 error=function(e){
+                   cat('error:',conditionMessage(e),'\n')
+                 })
+}
+
+# MyoVasc later genotyping array
+
+## check for errors in vcf files and tbi files
+for(i in 1:22){
+  print(i)
+  tv <- tryCatch(readVcf(TabixFile(vcf_files_myo2[i]), 
+                         genome=paste0('chr',i), 
+                         param=GRanges(seqnames=i, ranges=IRanges(0,1))),
+                 error=function(e){
+                   cat('error:',conditionMessage(e),'\n')
+                 })
+}
+
+
+# GHS
+for(i in 1:22){
+  print(i)
+  tv <- tryCatch(readVcf(TabixFile(vcf_filelist[i]), 
+                         genome=paste0('chr',i), 
+                         param=GRanges(seqnames=i, ranges=IRanges(0,1))),
+                 error=function(e) cat('error:',conditionMessage(e),'\n'))
+}
+
+
+
+
+
+### After you get the SNPs, construct the score
+create_prs <- function(variant_data, # expects an object of format output by extract_variants()
+                       gwas_info, # expects an object of format output by get_trait_variants()
+                       remove_indels=FALSE,
+                       imp_threshold=.8,
+                       binary_outcome=TRUE, 
+                       exclude_extreme_associations=TRUE,
+                       LDplot=FALSE, # is overridden by flowchart if it is TRUE
+                       pruning_threshold=.75, 
+                       pval_threshold=5e-8, # can be 'turned off' by setting to 1
+                       use_reference_genome=TRUE, # if FALSE, uses sample data to estimate LD
+                       reference_pop='EUR', # one of EUR, SAS, EAS, AFR or AMR
+                       scale=FALSE, # center and standardize the score
+                       flowchart=TRUE){
+  start_time <- Sys.time()
+  require(metafor)
+  # create empty result and exclusions list ----
+  res_list <- list()
+  e <- list()
+  # preprocess: remove indels, multiallelic SNPs
+  if(remove_indels==TRUE){
+    ndif <- nchar(variant_data$fix$REF)-nchar(variant_data$fix$ALT)
+    if(any(ndif>0)){
+      rind <- which(ndif>0)
+      variant_data$fix <- variant_data$fix[-rind,]
+      variants_left <- variant_data$fix$ID
+      variant_data$gt <- variant_data$gt[,which(colnames(variant_data$gt)%in%variants_left)]
+      }
+    }
+  dups <- which(duplicated(data.frame(variant_data$fix)$ID))
+  if(length(dups)>0){
+    variant_data$fix <- variant_data$fix[-c(dups,dups-1),]
+    variant_data$gt <- variant_data$gt[-c(dups,dups-1),]
+    cat('> Removed',length(dups),'duplicate variants (e.g. triallelic SNPs).\n') 
+  }
+  v <- variant_data$fix
+  unique_variants <- unique(v$ID)
+  no_of_variants <- length(unique_variants)
+  cat('> A total of',no_of_variants,'variants was retrieved.\n')
+  e$variants_retrieved <- no_of_variants
+  # check whether all variants were dropped
+  drop_check <- function(v){
+    if(nrow(v)==0) stop('All variants have been dropped. Try different tuning parameters.')
+  }
+  # take subset with imputation_quality>= imp_threshold; remove unnecessary columns ----
+  v$imp_qual <- v$DR2
+  low_imp_qual_l <- length(unique(v$ID[v$imp_qual<imp_threshold]))
+  v <- subset(v, imp_qual >= imp_threshold)
+  cat('> Dropped',low_imp_qual_l,'variants with imputation R^2 below threshold.\n')
+  e$low_imp_qual <- low_imp_qual_l
+  v <- v[,-c(6:10)]
+  unique_variants <- unique(v$ID)
+  drop_check(v)
+  # take out SNPs with no variance in dataset (i.e. constants)
+  varv <- suppressWarnings(sapply(variant_data$gt,sd))
+  novar <- names(which(is.na(varv)|varv==0))
+  variant_data$gt <- variant_data$gt[,!colnames(variant_data$gt) %in% novar]
+  v <- subset(v, !ID %in% novar)
+  g <- gwas_info
+  g <- subset(g, !variant_id %in% novar)
+  l0 <- length(unique_variants) - length(unique(v$ID))
+  unique_variants <- unique(v$ID)
+  cat('> Dropped',l0,'variants with zero variance in the data.\n')
+  e$no_variance <- l0
+  drop_check(v)
+  # load in gwas info for the associated trait (output from get_snps()) ----
+  g <- subset(g, variant_id %in% unique_variants)
+  l1 <- length(unique(v$ID[v$ID %in% unique(g$variant_id)]))
+  cat('> Dropped',length(unique_variants)-l1,'variants that did not match with gwas_info.\n')
+  e$missing_from_gwasinfo <- length(unique_variants)-l1
+  g
+  if(binary_outcome==TRUE){
+    g <- subset(g, !is.na(or_per_copy_number))
+  }
+  else{g <- subset(g, !is.na(beta_coefficient))}
+  g <- g[!duplicated(g),]
+  l2 <- length(unique(v$ID[v$ID %in% unique(g$variant_id)]))
+  cat('> Dropped',l1-l2,'variants with missing effect sizes.\n')
+  e$missing_effectsize <- l1-l2
+  if(binary_outcome==TRUE){g$effect_size <- log(g$or_per_copy_number)}
+  else{g$effect_size <- g$beta_coefficient}
+  g <- subset(g, !is.na(risk_allele))
+  l3 <- length(unique(v$ID[v$ID %in% unique(g$variant_id)]))
+  cat('> Dropped',l2-l3,'variants with missing risk alleles.\n')
+  e$missing_risk_allele <- l2-l3
+  drop_check(v)
+  # if multiple logORs reported, get meta-analytic estimate ----
+  snp_ind <- aggregate(effect_size~variant_id,g,function(x) length(unique(x)))
+  multiOR_l <- sum(as.numeric(snp_ind[,2]>1))
+  id_list <- list()
+  for(i in 1:length(unique(snp_ind$variant_id))){
+    meta <- g[g$variant_id==unique(snp_ind$variant_id)[i],]
+    if(nrow(meta)>1){
+      if(0%in%meta$pvalue){meta$pvalue[which(meta$pvalue==0)] <- min(meta$pvalue[meta$pvalue>0])}
+      meta$standard_error <- ifelse(is.na(meta$standard_error),
+                                    abs(meta$effect_size/qnorm(meta$pvalue/2)),
+                                    meta$standard_error)
+      meta_est <- suppressWarnings(metafor::rma(yi=meta$effect_size, 
+                                                sei=meta$standard_error))
+    }
+    id_list[[i]] <- g[g$variant_id == unique(snp_ind$variant_id)[i],][1,]
+    if(nrow(meta)>1){
+      id_list[[i]]$effect_size <- meta_est$beta
+      id_list[[i]]$standard_error <- meta_est$se
+    }
+  }
+  g <- do.call('rbind', id_list)
+  cat('> In case of multiple effect sizes (there were',multiOR_l,
+      'occurrences), used meta-analytic estimate for pooled effect size.\n')
+  e$multiple_effectsizes <- multiOR_l
+  # add to result list ----
+  v <- subset(v, ID %in% unique(g$variant_id))
+  g <- subset(g, variant_id %in% unique(v$ID))
+  unique_variants <- unique(v$ID)
+  # compare risk allele gwas catalog and vcf file 'ALT' allele ----
+  radf <- list()
+  for(i in 1:length(unique_variants)){
+    RA_g <- g$risk_allele[g$variant_id==unique_variants[i]]
+    RA_v <- v$ALT[v$ID==unique_variants[i]]
+    radf[[i]] <- c(RA_g, RA_v)
+  }
+  radf <- data.frame(do.call('rbind',radf))
+  colnames(radf) <- c('risk_allele_gwas','risk_allele_vcf')
+  rownames(radf) <- unique_variants
+  
+  radf$ref_allele_vcf <- v$REF[v$ID %in% rownames(radf)]
+  radf$complement_base_gwas <- rep(NA,nrow(radf))
+  radf$complement_base_vcf <- rep(NA,nrow(radf))
+  radf$complement_base_vcf_ref <- rep(NA,nrow(radf))
+  # get complement base ----
+  strandflip <- function(e) switch(e, 'A'='T','T'='A','C'='G','G'='C')
+  for(i in 1:nrow(radf)){
+    s1 <- strandflip(radf$risk_allele_gwas[i])
+    s2 <- strandflip(radf$risk_allele_vcf[i])
+    s3 <- strandflip(radf$ref_allele_vcf[i])
+    radf$complement_base_gwas[i] <- ifelse(is.null(s1),NA,s1)
+    radf$complement_base_vcf[i] <- ifelse(is.null(s2),NA,s2)
+    radf$complement_base_vcf_ref[i] <- ifelse(is.null(s3),NA,s3)
+  }
+  # comparison ----
+  radf$different <- radf$risk_allele_gwas!=radf$risk_allele_vcf&
+    radf$complement_base_gwas!=radf$risk_allele_vcf
+  radf$same_as_ref <- radf$risk_allele_gwas==radf$ref_allele_vcf|
+    radf$risk_allele_gwas==radf$complement_base_vcf_ref
+  radf$reverse_sign <- ifelse(radf$different==FALSE, 0, 1)
+  reverse_sign_SNPs <- rownames(radf)[which(radf$reverse_sign==1)]
+  cat('>',length(reverse_sign_SNPs),'variants had opposite risk allele coding with the GWAS catalog.\n')
+  e$opposite_allele_coding <- length(reverse_sign_SNPs)
+  # reverse logORs ----
+  g$effect_size_final <- g$effect_size
+  reverse_ind <- which(g$variant_id%in%reverse_sign_SNPs)
+  g$effect_size_final[reverse_ind] <- -1*g$effect_size_final[reverse_ind]
+  cat('>',length(reverse_ind),'effect sizes had their sign inverted. The new effect sizes are stored as effect_size_final.\n')
+  e$inverted_sign <- length(reverse_ind)
+  # exclude variants with extreme ORs (~ OR of 5 or 1/5) ----
+  if(exclude_extreme_associations==TRUE){
+    if(binary_outcome==TRUE){
+      extreme_variants <- unique(g$variant_id[which(abs(log(g$or_per_copy_number))>1.6)])
+      g <- subset(g, !variant_id %in% extreme_variants)
+      v <- subset(v, !ID %in% extreme_variants)
+      if(length(extreme_variants)>0){
+        cat('> Dropped',length(extreme_variants),'variants with extreme ORs (>5 or <1/5).\n')
+      }
+      e$extreme_effectsize_variants_dropped <- length(extreme_variants)
+      unique_variants <- v$ID
+      drop_check(v)
+    }
+    else{
+      cat('> No variants dropped (exclude_extreme_associations only compatible with binary outcomes).\n')
+      e$extreme_effectsize_variants_dropped <- 0
+    }
+  }
+  # now read in the actual allele data ----
+  d <- variant_data$gt
+  d <- d[, which(colnames(d) %in% unique_variants)]
+  # Linkage disequillibrium in data ----
+  LD_dat <- cor(d)
+  LD <- LD_dat
+  # reference LD matrix (1000 genomes phase 3)
+  if(use_reference_genome==TRUE){
+    require(ieugwasr)
+    cat('> Retrieving LD matrix from 1000G phase3 with',reference_pop,'reference population.\n')
+    refLD <- suppressWarnings(ld_matrix(colnames(d),with_alleles=FALSE,pop=reference_pop))
+    # replace part of LD where SNPs are also present in reference genome by ref genome LD
+    LD[which(rownames(LD)%in%rownames(refLD)),which(colnames(LD)%in%colnames(refLD))] <- refLD
+    cat('> Used LD information for',nrow(refLD),'variants from reference genome for pruning.\n')
+  }
+  if(LDplot==TRUE){
+    heatmap(LD)
+  }
+  # Prune high LD variants, leave only the one with higher MAF in the data ----
+  LD2 <- round(LD^2,2)
+  LDlotri <- lower.tri(LD2)*1
+  LDlotri[LDlotri==0] <- NA
+  LD2 <- LD2*LDlotri
+  # pairs
+  LDtab <- which(LD2>=pruning_threshold, arr.ind=TRUE)
+  if(nrow(LDtab)>0){
+    LDtab2 <- data.frame(matrix(NA,nrow=nrow(LDtab), ncol=2))
+    for(i in 1:nrow(LDtab)){
+      LDtab2[i,1] <- rownames(LD2)[LDtab[i,1]]
+      LDtab2[i,2] <- colnames(LD2)[LDtab[i,2]]
+    }
+    colnames(LDtab2) <- c('rowSNP','colSNP')
+    # distinguish repeating SNP names, reshape to wide format
+    LDtab2$rep <- c(0,(diff(as.numeric(factor(LDtab2$rowSNP)))==0)*1)
+    LDtab2 <- suppressWarnings(reshape(LDtab2, idvar='rowSNP', timevar='rep', direction='wide'))
+    # compare minor allele frequencies ----
+    keep_SNPs <- rep(NA, nrow(LDtab2))
+    for(i in 1:nrow(LDtab2)){
+      vn <- as.character(na.omit(as.character(LDtab2[i,grep('SNP',colnames(LDtab2))])))
+      maf <- sapply(d[vn],sum)
+      freq <- which(maf==max(maf))[1]
+      keep_SNPs[i] <- LDtab2[i,freq]
+    }
+    remove_SNPs <- setdiff(na.omit(unique(unlist(LDtab2))),keep_SNPs)
+    # subset 
+    d <- d[, -which(colnames(d) %in% remove_SNPs)]
+    g <- subset(g, !variant_id %in% remove_SNPs)
+    v <- subset(v, !ID %in% remove_SNPs)
+    cat('> Dropped ',length(remove_SNPs),' variants in high LD (R^2>=',pruning_threshold,
+        ') with other variants.\n',sep='')
+    e$high_LD_snps_pruned <- length(remove_SNPs)
+    drop_check(v)
+  }
+  if(nrow(LDtab)==0){e$high_LD_snps_pruned <- 0}
+  # p-value thresholding
+  prem_SNPs <- unique(g$variant_id[which(g$pvalue>pval_threshold)])
+  if(length(prem_SNPs)>0){
+    g <- subset(g, pvalue<=pval_threshold)
+    d <- d[, -which(colnames(d) %in% prem_SNPs)]
+    v <- subset(v, !ID %in% prem_SNPs)
+  }
+  cat('> Removed ',length(prem_SNPs),' variants by p-value thresholding (threshold=',
+      pval_threshold,')\n',sep='')
+  e$SNPs_removed_by_pval_thresholding <- length(prem_SNPs)
+  remaining_l <- length(unique(v$ID))
+  cat('>',remaining_l,'variants remaining.\n')    
+  e$remaining_snps <- remaining_l
+  drop_check(v)
+  # create the weighted polygenic risk score ----
+  g <- g[match(colnames(d),g$variant_id),]
+  effectsize <- as.matrix(g$effect_size_final)
+  prs <- as.matrix(d) %*% effectsize
+  cat('> Weighted polygenic score created using',length(effectsize),'SNPs.\n')
+  # center and standardize
+  if(scale==TRUE){
+    prs <- scale(prs)
+    cat('> Centered and standardized the score.\n')
+  }
+  # add information about reference genome to process_log
+  e$reference_LD_info_for <- ifelse(use_reference_genome==FALSE,0,nrow(refLD))
+  e <- do.call('c',e)
+  # fill result list ----
+  res_list$process_log <- e
+  res_list$gwas_info <- g
+  res_list$variant_info <- v
+  res_list$allele_data <- d
+  res_list$risk_allele_df <- radf
+  res_list$sample_ids <- as.matrix(rownames(d))
+  res_list$prs <- data.frame(id=res_list$sample_ids,prs=prs)
+  rownames(res_list$prs) <- NULL
+  res_list$ld_matrix <- LD_dat
+  if(use_reference_genome==TRUE){res_list$ref_ld_matrix <- refLD}
+  if(nrow(LDtab)>0){res_list$ld_pairs <- LDtab2}
+  cat('> Returned a list of results with the following dimensions:\n')
+  print(lapply(res_list, dim))
+  end_time <- Sys.time()
+  cat('> Creation of the PRS took',difftime(end_time,start_time,units='secs'),'seconds.\n')
+  if(flowchart==TRUE){
+    library(PRISMAstatement)
+    print(flow_exclusions(incl_counts=c(e[1],
+                                        e[1]-e[2],
+                                        e[1]-e[2]-e[3],
+                                        e[1]-e[2]-e[3]-e[4],
+                                        e[1]-e[2]-e[3]-e[4]-sum(e[5:6]),
+                                        e[1]-e[2]-e[3]-e[4]-sum(e[5:6])-e[10],
+                                        e[1]-e[2]-e[3]-e[4]-sum(e[5:6])-e[10]-e[11],
+                                        e[1]-e[2]-e[3]-e[4]-sum(e[5:6])-e[10]-e[11]-e[12]),
+                          total_label='Total variants retrieved',
+                          incl_labels=c('High imputation quality variants',
+                                        'Variants with non-zero variance',
+                                        'Variants reported in GWAS catalog',
+                                        'Variants with complete information',
+                                        'Variants with non-extreme effect sizes',
+                                        'Variants sufficiently independent',
+                                        'Variants used in the weighted score'),
+                          excl_labels=c(paste0('Low imputation quality (R^2<',imp_threshold,')'),
+                                        'Variants with zero variance in the data',
+                                        'Variants not found in GWAS catalog information',
+                                        'Missing effect size or risk allele',
+                                        'Variants with extreme effect sizes (99th percentile)',
+                                        'Variants in high LD with other included variants with higher MAF',
+                                        paste0('Variants with p-value above threshold (',pval_threshold,')'))))
+  }
+  invisible(return(res_list))
+}
+
+
+# examples
+hf_list <- create_prs(out_hf, hf_gwas_info, imp_threshold = .8, 
+                      use_reference_genome=FALSE, pruning_threshold=0.75,
+                      pval_threshold = 5e-8)
+vte_list <- create_prs(out_vte, vte_gwas_info, imp_threshold = .8, 
+                      use_reference_genome=FALSE, pruning_threshold=0.75,
+                      pval_threshold = 5e-8)
+
+ACE2_list <- create_prs(out_ACE2, ACE2_pqtls, imp_threshold = .8, 
+                        use_reference_genome=FALSE, pruning_threshold=0.75,
+                        pval_threshold = 5e-8, binary_outcome = FALSE,
+                        remove_indels=TRUE)
+
+CXCL12_list <- create_prs(out_CXCL12, CXCL12_pqtls, imp_threshold = .8, 
+                        use_reference_genome=FALSE, pruning_threshold=0.75,
+                        pval_threshold = 5e-8, binary_outcome = FALSE,
+                        remove_indels=TRUE)
+
+## TG prs for both cohorts
+TG_myovasc <- create_prs(out_TG_myo_comb, TG_gwas_info,
+                         imp_threshold=.33, use_reference_genome = FALSE,
+                         pruning_threshold=.75, pval_threshold = 5e-6,
+                         binary_outcome=FALSE)
+
+
+
+## prs_pipeline() function ----
+
+prs_pipeline <- function(trait=NULL,
+                         trait_list=NULL,
+                         pQTL=NULL,
+                         pQTL_list=NULL,
+                         is_cis=TRUE, # if FALSE, returns also trans pQTLs (>1Mb from TSS)
+                         chr_files=NULL, # provide vector of filenames (including folder)
+                         autosomes=TRUE, # if FALSE, sex chromosomes are also searched
+                         range=0, # search for variants from start position+range (in bp)
+                         grch37=TRUE, # if FALSE, the build is grch38
+                         keep_all=FALSE, # if FALSE, only those rsids provided are kept
+                         binary_outcome=TRUE,
+                         ...){
+  starttime <- Sys.time()
+  cat('> Retrieving information for trait/pQTL of interest.\n')
+  if(!is.null(trait)&!is.null(pQTL)){stop('Trait and pQTL cannot both be non-NULL.')}
+  if(!is.null(trait)){
+    g <- get_trait_variants(trait, trait_list=trait_list)
+  }
+  if(!is.null(pQTL)){
+    g <- get_pQTLs(pQTL, pQTL_list=pQTL_list, is_cis=is_cis)
+    binary_outcome <- FALSE
+  }
+  cat('> Initiating extraction of variants from chromosome files.\n')
+  if(is.null(chr_files)){stop('Filenames for chromosome .vcf files should be provided as chr_files.')}
+  v <- extract_variants_robust(chr_files=chr_files,
+                        gwas_info=g,
+                        autosomes=autosomes,
+                        range=range,
+                        grch37=grch37,
+                        keep_all=keep_all)
+  cat('> Constructing polygenic risk score from variants.\n')
+  prs <- create_prs(variant_data=v, 
+                    gwas_info=g,
+                    binary_outcome=binary_outcome,
+                    ...)
+  endtime <- Sys.time()
+  cat('> Running the full pipeline took',difftime(endtime,starttime,units='secs'),'seconds.')
+  return(prs)
+}
+
+vte_prs <- prs_pipeline(trait='venous thromboembolism|deep vein thrombosis|pulmonary embolism',
+                        trait_list=trait_list,
+                        chr_files=vcf_files_myo2,
+                        autosomes=FALSE,
+                        use_reference_genome=FALSE)
+
+ACE2_prs <- prs_pipeline(pQTL='ACE2',
+                         pQTL_list=pQTL_list,
+                         chr_files=vcf_files_myo2,
+                         autosomes=FALSE,
+                         use_reference_genome=FALSE,
+                         is_cis=FALSE)
+
+TG_prs <- prs_pipeline(trait='thrombin generation',
+                       trait_list=trait_list,
+                       chr_files=vcf_filelist,
+                       autosomes=FALSE,
+                       use_reference_genome=FALSE,
+                       binary_outcome=FALSE,
+                       pval_threshold=1)
+
+# PAR-1 pQTL score
+F2R_prs <- prs_pipeline(pQTL='F2R',
+                        pQTL_list=pQTL_list,
+                        chr_files=vcf_files_myo2,
+                        autosomes=FALSE,
+                        is_cis=FALSE,
+                        use_reference_genome=FALSE)
+# PAR-1 cis pQTL score
+F2R_cis_prs <- prs_pipeline(pQTL='F2R',
+                        pQTL_list=pQTL_list,
+                        chr_files=vcf_files_myo2,
+                        autosomes=FALSE,
+                        use_reference_genome=FALSE)
+
+## prs_grid() function ----
+
+prs_grid <- function(variant_data, gwas_info, 
+                     binary_outcome=TRUE,
+                     imp_range=seq(0.8,1,0.05),
+                     pruning_range=seq(0.7,1,0.05),
+                     pval_range=quantile(gwas_info$pvalue,seq(0.1,1,0.1)),
+                     optimal=FALSE,
+                     optimal_trials=9,
+                     ref_genome=FALSE){
+  require(AlgDesign)
+  ff <- AlgDesign::gen.factorial(c(length(imp_range),
+                                   length(pruning_range),
+                                   length(pval_range)),
+                    factors='all',
+                    varNames=c('imp_threshold','pruning_threshold','pval_threshold'))
+  ff$imp_threshold <- imp_range[as.numeric(as.character(ff$imp_threshold))]
+  ff$pruning_threshold <- pruning_range[as.numeric(as.character(ff$pruning_threshold))]
+  ff$pval_threshold <- pval_range[as.numeric(as.character(ff$pval_threshold))]
+  
+  prs_list <- list()
+  if(optimal==TRUE){
+    cat('> Running a D-optimal fractional factorial design (Fedorov algorithm).\n')
+    fractional <- AlgDesign::optFederov(~imp_threshold+pruning_threshold+pval_threshold,ff,
+                                        criterion='D',nTrials=optimal_trials)
+    des <- fractional$design
+  }
+  else{
+    cat('> Running a full factorial design.\n')
+    des <- ff
+  }
+  for(r in 1:nrow(des)){
+    cat('**Iteration ',r,' of ',nrow(des),'. (',round((r/nrow(des))*100,2),'%)\n',sep='')
+    sink('NUL')
+    prs <- create_prs(variant_data, gwas_info,
+                      imp_threshold=des$imp_threshold[r],
+                      pruning_threshold=des$pruning_threshold[r],
+                      pval_threshold=des$pval_threshold[r],
+                      use_reference_genome = ref_genome,
+                      binary_outcome=binary_outcome,
+                      flowchart=FALSE)
+    sink()
+    prs_list[[r]] <- prs
+  }
+  closeAllConnections()
+  prs_df <- lapply(prs_list,function(x) x$prs$prs)
+  prs_df <- data.frame(cbind(id=prs_list[[1]]$prs$id,do.call('cbind',prs_df)))
+  colnames(prs_df)[2:ncol(prs_df)] <- paste0('prs_',1:nrow(des))
+  prs_df[,2:ncol(prs_df)] <- sapply(prs_df[,2:ncol(prs_df)],as.numeric)
+  return(list(design=des,
+              all_results=prs_list,
+              result_df=prs_df))
+}
+
+
+## stacked_prs() function ----
+
+stacked_prs <- function(prs_grid, y, nfolds=10, 
+                        family='binomial', 
+                        plot_error=TRUE,
+                        seed=NULL,
+                        ...){
+  # wrapper for cv.glmnet; X and y should not contain any missings
+  require(glmnet)
+  X <- as.matrix(prs_grid)
+  if(!is.null(seed)) set.seed(seed)
+  gmod <- glmnet::cv.glmnet(X, y, nfolds=nfolds,
+                           family = family,
+                           ...)
+  if(plot_error==TRUE){plot(gmod)}
+  lasso_coefs <- coef(gmod$glmnet.fit)[,which(gmod$lambda==gmod$lambda.min)]
+  print(lasso_coefs[lasso_coefs!=0])
+  reslist <- list(model=gmod,
+                 stacked_prs=predict(gmod,newx=X,s='lambda.min'),
+                 model_coefs=lasso_coefs[lasso_coefs!=0])
+  return(reslist)
+}
+
+## repeated k-fold cross-validated AUC
+
+repeated_kfold_auc <- function(pred, obs, reps=100, nfolds=5, seed=12345){
+  set.seed(seed)
+  out_list <- list()
+  for(r in 1:reps){
+    fold_list <- rep(NA,length(filter2[filter2==TRUE]))
+    for(i in 1:nfolds){
+      sind <- sample(setdiff(1:length(fold_list),which(!is.na(fold_list))),
+                     length(fold_list)/nfolds,replace=FALSE)
+      fold_list[sind] <- i
+    }
+    fold_list[which(is.na(fold_list))] <- nfolds
+    
+    out_list[[r]] <- cvAUC::cvAUC(pred,obs,folds=fold_list)
+  }
+  return(out_list) 
+}
+
+
+
+

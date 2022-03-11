@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1647004362365.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "BBC86387",
+    "lastKnownWriteTime" : 1647008775,
+    "last_content_update" : 1647008775601,
+    "path" : "~/polygenic/R/extract_variants.R",
+    "project_path" : "R/extract_variants.R",
+    "properties" : {
+        "cursorPosition" : "21,10",
+        "scrollLine" : "0",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 6,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

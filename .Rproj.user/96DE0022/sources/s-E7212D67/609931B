@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1647002165453.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "609931B",
+    "lastKnownWriteTime" : 1647002570,
+    "last_content_update" : 1647002570874,
+    "path" : "~/polygenic/R/get_trait_variants.R",
+    "project_path" : "R/get_trait_variants.R",
+    "properties" : {
+        "cursorPosition" : "74,0",
+        "scrollLine" : "0",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 3,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}
