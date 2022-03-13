@@ -21,13 +21,6 @@
 #' # chr_files=vcf_files_myo2,
 #' # autosomes=FALSE)
 #' @export
-#' @importFrom gwasrapidd "get_associations"
-#' @importFrom biomaRt "useMart" "getBM"
-#' @importFrom Rsamtools "TabixFile" "seqnamesTabix"
-#' @importFrom GenomicRanges "GRanges"
-#' @importFrom VariantAnnotation "readVcf"
-#' @importFrom metafor "rma"
-#' @importFrom PRISMAstatement "flow_exclusions"
 
 prs_pipeline <- function(trait=NULL,
                          trait_list=NULL,
