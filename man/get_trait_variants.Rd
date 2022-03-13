@@ -30,6 +30,5 @@ A formatted data.frame containing all trait-related variants, including summary 
 Returns a formatted data.frame of variants for a given trait, including summary statistics
 }
 \examples{
-\donttest{MI_variants <- get_trait_variants('MI|myocardial infarction',
-trait_list=trait_list,ask_about_efo=FALSE)}
+\donttest{MI_variants <- get_trait_variants('MI|myocardial infarction',ask_about_efo=FALSE)}
 }

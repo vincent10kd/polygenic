@@ -24,4 +24,6 @@ Imports:
     metafor,
     methods,
     SummarizedExperiment,
-    IRanges
+    IRanges,
+    AlgDesign,
+    glmnet
