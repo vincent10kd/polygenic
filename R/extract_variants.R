@@ -20,8 +20,8 @@
 #' @importFrom Rsamtools "TabixFile" "seqnamesTabix"
 #' @importFrom SummarizedExperiment "rowRanges"
 #' @importFrom IRanges "IRanges"
-#' @import GenomicRanges
-#' @import VariantAnnotation
+#' @importFrom GenomicRanges "GRanges"
+#' @importFrom VariantAnnotation "readVcf"
 
 extract_variants <- function(chr_files, # chromosome vcf files
                              gwas_info, # output from get_trait_variants/get_pQTLs or a vector of rsids
