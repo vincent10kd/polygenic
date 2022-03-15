@@ -21,7 +21,7 @@
 #' @importFrom SummarizedExperiment "rowRanges"
 #' @importFrom IRanges "IRanges"
 #' @importFrom GenomicRanges "GRanges"
-#' @importFrom VariantAnnotation "readVcf"
+#' @importFrom VariantAnnotation "readVcf" "info"
 
 extract_variants <- function(chr_files, # chromosome vcf files
                              gwas_info, # output from get_trait_variants/get_pQTLs or a vector of rsids
@@ -84,7 +84,7 @@ extract_variants <- function(chr_files, # chromosome vcf files
                      ranges=IRanges::IRanges(d$chrom_start[s],d$chrom_start[s]+range))
       ext <- VariantAnnotation::readVcf(tabix, genome=paste0('chr',chr), param=rng)
       fix <- data.frame(SummarizedExperiment::rowRanges(ext))
-      info <- info(ext)
+      info <- VariantAnnotation::info(ext)
       info <- cbind(fix,info)
       ext <- VariantAnnotation::genotypeToSnpMatrix(ext)
       ext <- as(ext$genotype,'numeric')

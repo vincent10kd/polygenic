@@ -5,7 +5,7 @@
 #'
 #' @return A list of all queryable traits in the GWAS catalog
 #' @examples
-#' trait_list <- init_gwas_db()
+#' trait_list <- init_gwas_dbs()
 #' @export
 #' @importFrom gwasrapidd "get_traits"
 #'
