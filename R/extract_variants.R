@@ -68,21 +68,22 @@ extract_variants <- function(chr_files, # chromosome vcf files
   chr_list <- chr_list2 <- list()
   for(chrom in 1:length(unique(posdf$chr_name))){
     chr <- unique(posdf$chr_name)[chrom]
-    cat('> Extracting variants in chromosome',chr,'\n')
+    chr2 <- chr
     tabix <- Rsamtools::TabixFile(files[as.numeric(chr)])
+    if(chr%in%c('23','24')){
+      chr2 <- c(seq(1,22),c('X','Y'))[as.numeric(chr)]
+    }
     tabix_seq <- Rsamtools::seqnamesTabix(tabix)
-    if(tabix_seq!=chr){
-      warning('Tabix seqnames do not match the chromosome name (',chr,').')
+    if(tabix_seq!=chr2){
+      warning('Tabix seqnames do not match the chromosome name (',chr2,').')
     }
+    cat('> Extracting variants in chromosome',chr2,'\n')
     d <- posdf[posdf$chr_name==chr,]
-    if(chr%in%23:24){
-      chr <- c(seq(1,22),c('X','Y'))[as.numeric(chr)]
-    }
     res <- lapply(1:nrow(d),function(s){
       cat('** Searching for variant',s,'of',nrow(d),'\n')
       rng <- GenomicRanges::GRanges(seqnames=tabix_seq,
                      ranges=IRanges::IRanges(d$chrom_start[s],d$chrom_start[s]+range))
-      ext <- VariantAnnotation::readVcf(tabix, genome=paste0('chr',chr), param=rng)
+      ext <- VariantAnnotation::readVcf(tabix, genome=paste0('chr',chr2), param=rng)
       fix <- data.frame(SummarizedExperiment::rowRanges(ext))
       info <- VariantAnnotation::info(ext)
       info <- cbind(fix,info)
