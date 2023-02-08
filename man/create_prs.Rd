@@ -14,6 +14,9 @@ create_prs(
   LDplot = FALSE,
   pruning_threshold = 0.75,
   pval_threshold = 5e-08,
+  conditional = FALSE,
+  cond_window = 1e+07,
+  cond_N = 60000,
   scale = FALSE,
   flowchart = TRUE
 )
@@ -37,6 +40,12 @@ create_prs(
 
 \item{pval_threshold}{Variants with GWAS p-values > pval_threshold are discarded. Set to 1 to turn off.}
 
+\item{conditional}{If TRUE, uses marg2con() to create decorrelate variants in LD if these are within a given bp distance on the same chromosome.}
+
+\item{cond_window}{A genomic distance within which to decorrelate variants in LD, in base pair.}
+
+\item{cond_N}{The sample size of the original GWAS from which the marginal estimates were derived, or an approximation of it.}
+
 \item{scale}{Centers and standardizes the polygenic risk score if TRUE.}
 
 \item{flowchart}{If TRUE, plots a flowchart describing the creation of the polygenic risk score.}
@@ -46,6 +55,7 @@ A list containing several data.frames with all relevant information. The risk sc
 }
 \description{
 Create a polygenic risk score based on summary statistics from prior GWAS/pQTL discovery studies.
+Included variants in high LD can be decorrelated to prevent double-counting, using the conditional argument.
 }
 \examples{
 # vte_prs <- create_prs(vte_extracted_variants, vte_gwas_info)

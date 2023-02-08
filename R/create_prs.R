@@ -270,11 +270,11 @@ create_prs <- function (variant_data,
     se <- g$standard_error
     sds <- diag(sqrt(diag(cov(d))))
     covX <- sds %*% LD2 %*% sds
-    cond_res <- marg2con(marginal_coefs = g$effect_size_final,
-                         covX = covX,
-                         N = cond_N,
-                         estimate_se = TRUE,
-                         marginal_se = se)
+    cond_res <- polygenic::marg2con(marginal_coefs = g$effect_size_final,
+                                    covX = covX,
+                                    N = cond_N,
+                                    estimate_se = TRUE,
+                                    marginal_se = se)
     g$effect_size_final <- cond_res$beta
     g$standard_error <- cond_res$se
     g$pvalue <- cond_res$p
