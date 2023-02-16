@@ -244,8 +244,8 @@ create_prs <- function (variant_data,
 
   ## make effects conditional
   if(conditional){
-    pos <- g$POS
-    chr <- g$CHR
+    pos <- v$POS
+    chr <- v$CHROM
     LD2 <- cor(d)
 
     for(i in 1:nrow(LD2)){
@@ -270,11 +270,11 @@ create_prs <- function (variant_data,
     se <- g$standard_error
     sds <- diag(sqrt(diag(cov(d))))
     covX <- sds %*% LD2 %*% sds
-    cond_res <- polygenic::marg2con(marginal_coefs = g$effect_size_final,
-                                    covX = covX,
-                                    N = cond_N,
-                                    estimate_se = TRUE,
-                                    marginal_se = se)
+    cond_res <- marg2con(marginal_coefs = g$effect_size_final,
+                         covX = covX,
+                         N = cond_N,
+                         estimate_se = TRUE,
+                         marginal_se = se, binary = binary_outcome)
     g$effect_size_final <- cond_res$beta
     g$standard_error <- cond_res$se
     g$pvalue <- cond_res$p
@@ -348,3 +348,4 @@ create_prs <- function (variant_data,
   }
   invisible(return(res_list))
 }
+
