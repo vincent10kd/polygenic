@@ -15,6 +15,8 @@
 #' @param conditional If TRUE, uses marg2con() to create decorrelate variants in LD if these are within a given bp distance on the same chromosome.
 #' @param cond_window A genomic distance within which to decorrelate variants in LD, in base pair.
 #' @param cond_N The sample size of the original GWAS from which the marginal estimates were derived, or an approximation of it.
+#' @param ridge If TRUE, applies a ridge penalty. This only applies when conditional is set to TRUE.
+#' @param lambda The parameter controlling the degree of ridge regularization.
 #' @param scale Centers and standardizes the polygenic risk score if TRUE.
 #' @param flowchart If TRUE, plots a flowchart describing the creation of the polygenic risk score.
 #'
@@ -38,6 +40,8 @@ create_prs <- function (variant_data,
                         conditional = FALSE,
                         cond_window = 1e+07,
                         cond_N = 60000,
+                        ridge = FALSE,
+                        lambda = 0,
                         scale = FALSE,
                         flowchart = TRUE)
 {
@@ -273,13 +277,22 @@ create_prs <- function (variant_data,
     se <- g$standard_error
     sds <- diag(sqrt(diag(cov(d))))
     covX <- sds %*% LD2 %*% sds
-    cond_res <- marg2con(marginal_coefs = g$effect_size_final,
-                         covX = covX, N = cond_N, estimate_se = TRUE, marginal_se = se,
-                         binary = binary_outcome)
-    g$effect_size_final <- cond_res$beta
-    g$standard_error <- cond_res$se
-    g$pvalue <- cond_res$p
-    cat("> Marginal estimates, standard errors and p-values were converted to conditional based on LD.\n")
+    if(ridge == FALSE){
+      cond_res <- marg2con(marginal_coefs = g$effect_size_final,
+                           covX = covX, N = cond_N, estimate_se = TRUE, marginal_se = se,
+                           binary = binary_outcome)
+      g$effect_size_final <- cond_res$beta
+      g$standard_error <- cond_res$se
+      g$pvalue <- cond_res$p
+      cat("> Marginal estimates, standard errors and p-values were converted to conditional based on LD.\n")
+    }
+    else{
+      cond_res <- marg2con(marginal_coefs = g$effect_size_final,
+                           covX = covX, N = cond_N, ridge = ridge, lambda = lambda,
+                           binary = binary_outcome)
+      g$effect_size_final <- cond_res$beta
+      cat("> Marginal estimates were converted to conditional based on LD, and ridge regularization was applied.\n")
+    }
   }
   prem_SNPs <- unique(g$variant_id[which(g$pvalue > pval_threshold)])
   if (length(prem_SNPs) > 0) {
@@ -296,8 +309,7 @@ create_prs <- function (variant_data,
   g <- g[match(colnames(d), g$variant_id), ]
   effectsize <- as.matrix(g$effect_size_final)
   prs <- as.matrix(d) %*% effectsize
-  cat("> Weighted polygenic score created using", length(effectsize),
-      "SNPs.\n")
+  cat("> Weighted polygenic score created using", length(effectsize), "SNPs.\n")
   if (scale == TRUE) {
     prs <- scale(prs)
     cat("> Centered and standardized the score.\n")
