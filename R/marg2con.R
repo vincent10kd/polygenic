@@ -14,6 +14,8 @@
 #' @param estimate_se If TRUE and if marginal_se is not NULL, returns conditional standard error estimates.
 #' @param y A continuous or binary response vector. If provided together with X, standard OLS is fit to obtain the estimates.
 #' @param varY The variance of the response vector. Is estimated if not provided.
+#' @param ridge If TRUE, applies a ridge penalty.
+#' @param lambda The parameter controlling the degree of (ridge) regularization.
 #' @param binary If TRUE, assumes that marginal_coefs are log odds ratios and that the standard errors should be estimated based on a different variance approximation for the response vector.
 #' @param caseprop The proportion of the response vector that represents 'cases', i.e. the proportion of the binary-valued vector that is equal to 1.
 #'
@@ -45,6 +47,8 @@ marg2con <- function(marginal_coefs,
                      estimate_se=FALSE,
                      y=NULL,
                      varY=NULL,
+                     ridge=FALSE,
+                     lambda=0,
                      binary=FALSE,
                      caseprop=0.25){
 
@@ -60,13 +64,20 @@ marg2con <- function(marginal_coefs,
     }
     else stop('One of X or covX should be provided. Alternatively, corX and MAF are required.')
   }
-  cond <- solve(covX) %*% diag(diag(covX)) %*% beta
+
+  if(ridge){
+    lambdaI <- lambda * diag(ncol(X2))
+    cond <- solve(covX + lambdaI) %*% diag(diag(covX)) %*% beta
+    cat('\n Ridge-regularized conditional estimates from marginal estimates and covariance matrix:\n')
+    return(data.frame(beta=cond))
+  }
+  cond <- solve(covX, diag(diag(covX)) %*% beta)
 
   if(estimate_se){
     if(!is.null(y)){
 
       X2 <- cbind(1,X)
-      beta_adj <- solve(t(X2)%*%X2) %*% t(X2) %*% y
+      beta_adj <- solve(t(X2)%*%X2, t(X2) %*% y)
       resids <- y - (X2 %*% beta_adj)
       df <- N - length(beta_adj)
       mse <- sum(resids^2) / df
@@ -106,7 +117,7 @@ marg2con <- function(marginal_coefs,
       if(is.null(marginal_se)){
         stop('Marginal standard errors are required to approximate conditional SEs.')
       }
-      beta_adj <- solve(covX) %*% diag(diag(covX)) %*% marginal_coefs
+      beta_adj <- solve(covX, diag(diag(covX)) %*% marginal_coefs)
 
       B <- t(beta_adj) %*% diag(diag(covX)) %*% marginal_coefs
       df <- N - length(beta_adj)
