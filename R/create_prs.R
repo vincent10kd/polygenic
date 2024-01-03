@@ -36,7 +36,7 @@ create_prs <- function (variant_data,
                         pruning_threshold = 0.75,
                         pval_threshold = 5e-08,
                         conditional = FALSE,
-                        cond_window = 10e6,
+                        cond_window = 1e+07,
                         cond_N = 60000,
                         scale = FALSE,
                         flowchart = TRUE)
@@ -50,8 +50,7 @@ create_prs <- function (variant_data,
       rind <- which(ndif > 0)
       variant_data$fix <- variant_data$fix[-rind, ]
       variants_left <- variant_data$fix$ID
-      variant_data$gt <- variant_data$gt[, which(colnames(variant_data$gt) %in%
-                                                   variants_left)]
+      variant_data$gt <- variant_data$gt[, which(colnames(variant_data$gt) %in% variants_left)]
     }
   }
   dups <- which(duplicated(data.frame(variant_data$fix)$ID))
@@ -114,8 +113,6 @@ create_prs <- function (variant_data,
   cat("> Dropped", l2 - l3, "variants with missing risk alleles.\n")
   e$missing_risk_allele <- l2 - l3
   drop_check(v)
-
-  # meta-analyze associations reported in >1 study
   snp_ind <- aggregate(effect_size ~ variant_id, g, function(x) length(unique(x)))
   multiOR_l <- sum(as.numeric(snp_ind[, 2] > 1))
   id_list <- list()
@@ -152,8 +149,6 @@ create_prs <- function (variant_data,
   radf <- data.frame(do.call("rbind", radf))
   colnames(radf) <- c("risk_allele_gwas", "risk_allele_vcf")
   rownames(radf) <- unique_variants
-
-  # strand flip / reverse allele coding
   radf$ref_allele_vcf <- v$REF[v$ID %in% rownames(radf)]
   radf$complement_base_gwas <- rep(NA, nrow(radf))
   radf$complement_base_vcf <- rep(NA, nrow(radf))
@@ -167,8 +162,10 @@ create_prs <- function (variant_data,
     radf$complement_base_vcf[i] <- ifelse(is.null(s2), NA, s2)
     radf$complement_base_vcf_ref[i] <- ifelse(is.null(s3), NA, s3)
   }
-  radf$different <- radf$risk_allele_gwas != radf$risk_allele_vcf & radf$complement_base_gwas != radf$risk_allele_vcf
-  radf$same_as_ref <- radf$risk_allele_gwas == radf$ref_allele_vcf | radf$risk_allele_gwas == radf$complement_base_vcf_ref
+  radf$different <- radf$risk_allele_gwas != radf$risk_allele_vcf &
+                    radf$complement_base_gwas != radf$risk_allele_vcf
+  radf$same_as_ref <- radf$risk_allele_gwas == radf$ref_allele_vcf |
+                      radf$risk_allele_gwas == radf$complement_base_vcf_ref
   radf$reverse_sign <- ifelse(radf$different == FALSE, 0, 1)
   reverse_sign_SNPs <- rownames(radf)[which(radf$reverse_sign == 1)]
   cat(">", length(reverse_sign_SNPs), "variants had opposite risk allele coding with the GWAS catalog.\n")
@@ -178,12 +175,9 @@ create_prs <- function (variant_data,
   g$effect_size_final[reverse_ind] <- -1 * g$effect_size_final[reverse_ind]
   cat(">", length(reverse_ind), "effect sizes had their sign inverted. The new effect sizes are stored as effect_size_final.\n")
   e$inverted_sign <- length(reverse_ind)
-
-  # extreme effect sizes for binary traits
   if (exclude_extreme_associations == TRUE) {
     if (binary_outcome == TRUE) {
-      extreme_variants <- unique(g$variant_id[which(abs(log(g$or_per_copy_number)) >
-                                                      1.6)])
+      extreme_variants <- unique(g$variant_id[which(abs(log(g$or_per_copy_number)) > 1.6)])
       g <- subset(g, !variant_id %in% extreme_variants)
       v <- subset(v, !ID %in% extreme_variants)
       if (length(extreme_variants) > 0) {
@@ -206,82 +200,87 @@ create_prs <- function (variant_data,
     heatmap(LD)
   }
 
-  # pruning variants based on LD
-  LD2 <- round(LD^2, 2)
-  LDlotri <- lower.tri(LD2) * 1
-  LDlotri[LDlotri == 0] <- NA
-  LD2 <- LD2 * LDlotri
-  LDtab <- which(LD2 >= pruning_threshold, arr.ind = TRUE)
-  if (nrow(LDtab) > 0) {
-    LDtab2 <- data.frame(matrix(NA, nrow = nrow(LDtab), ncol = 2))
-    for (i in 1:nrow(LDtab)) {
-      LDtab2[i, 1] <- rownames(LD2)[LDtab[i, 1]]
-      LDtab2[i, 2] <- colnames(LD2)[LDtab[i, 2]]
-    }
-    colnames(LDtab2) <- c("rowSNP", "colSNP")
-    LDtab2$rep <- c(0, (diff(as.numeric(factor(LDtab2$rowSNP))) == 0) * 1)
-    LDtab2 <- suppressWarnings(reshape(LDtab2, idvar = "rowSNP", timevar = "rep", direction = "wide"))
-    keep_SNPs <- rep(NA, nrow(LDtab2))
-    for (i in 1:nrow(LDtab2)) {
-      vn <- as.character(na.omit(as.character(LDtab2[i, grep("SNP", colnames(LDtab2))])))
-      maf <- sapply(d[vn], sum)
-      freq <- which(maf == max(maf))[1]
-      keep_SNPs[i] <- LDtab2[i, freq]
-    }
-    remove_SNPs <- setdiff(na.omit(unique(unlist(LDtab2))),
-                           keep_SNPs)
-    d <- d[, -which(colnames(d) %in% remove_SNPs)]
+  # LD pruning loop
+  pruning_done <- FALSE
+  pruned_set <- c()
+
+  while(pruning_done == FALSE){
+    # check against threshold
+    LD <- cor(d)
+    LD2 <- round(LD^2,2)
+    LD2 <- LD2*lower.tri(LD2)
+    LDtab <- which(LD2 > pruning_threshold, arr.ind=T)
+
+    # identify SNPs
+    row_snps <- rownames(LD2)[LDtab[,1]]
+    col_snps <- rownames(LD2)[LDtab[,2]]
+
+    # retrieve corresponding MAFs
+    row_mafs <- ifelse(length(row_snps)>1, sapply(d[,row_snps],function(x) sum(x)/(2*length(x))), sum(d[,row_snps])/(2*length(d[,row_snps])))
+    row_mafs <- ifelse(row_mafs > 0.5, 1-row_mafs, row_mafs)
+    col_mafs <- ifelse(length(col_snps)>1, sapply(d[,col_snps],function(x) sum(x)/(2*length(x))), sum(d[,col_snps])/(2*length(d[,col_snps])))
+    col_mafs <- ifelse(col_mafs > 0.5, 1-col_mafs, col_mafs)
+    # identify first max
+    maf_df <- data.frame(row_mafs, col_mafs)
+    which_max <- unlist(apply(maf_df, 1, which.max))
+
+    # throw out lower MAF variant of the pair
+    which_keep <- unique(ifelse(which_max == 1, row_snps, col_snps))
+    remove_SNPs <- setdiff(union(row_snps, col_snps), which_keep)
+    pruned_set <- c(pruned_set, remove_SNPs)
+
+    # update SNP set
+    d[, remove_SNPs] <- NULL
+    v <- v[!v$ID %in% remove_SNPs, ]
     g <- subset(g, !variant_id %in% remove_SNPs)
-    v <- subset(v, !ID %in% remove_SNPs)
-    cat("> Dropped ", length(remove_SNPs), " variants in high LD (R^2>=",
-        pruning_threshold, ") with other variants.\n", sep = "")
-    e$high_LD_snps_pruned <- length(remove_SNPs)
-    drop_check(v)
-  }
-  if (nrow(LDtab) == 0) {
-    e$high_LD_snps_pruned <- 0
+
+    # check against threshold
+    LD <- cor(d)
+    LD2 <- round(LD^2,2)
+    LD2 <- LD2*lower.tri(LD2)
+    LDtab <- which(LDtab > pruning_threshold, arr.ind=T)
+
+    if(nrow(LDtab)==0) pruning_done <- TRUE
   }
 
-  ## make effects conditional
-  if(conditional){
+  cat("> Dropped ", length(pruned_set), " variants in high LD (R^2>=",
+      pruning_threshold, ") with other variants.\n", sep = "")
+  e$high_LD_snps_pruned <- length(pruned_set)
+  drop_check(v)
+
+  ## conditional estimates
+  if (conditional) {
     pos <- v$POS
     chr <- v$CHROM
     LD2 <- cor(d)
-
-    for(i in 1:nrow(LD2)){
-      for(j in 1:ncol(LD2)){
+    for (i in 1:nrow(LD2)) {
+      for (j in 1:ncol(LD2)) {
         chr_i <- chr[i]
         chr_j <- chr[j]
-        if(chr_i != chr_j){
+        if (chr_i != chr_j) {
           LD2[i, j] <- 0
           next
         }
         pos_i <- pos[i]
         pos_j <- pos[j]
         pos_dif <- abs(pos_i - pos_j)
-        if(pos_dif > cond_window){
+        if (pos_dif > cond_window) {
           LD2[i, j] <- 0
         }
         else next
       }
     }
-
-    # convert modified correlation matrix to covariance matrix
     se <- g$standard_error
     sds <- diag(sqrt(diag(cov(d))))
     covX <- sds %*% LD2 %*% sds
     cond_res <- marg2con(marginal_coefs = g$effect_size_final,
-                         covX = covX,
-                         N = cond_N,
-                         estimate_se = TRUE,
-                         marginal_se = se, binary = binary_outcome)
+                         covX = covX, N = cond_N, estimate_se = TRUE, marginal_se = se,
+                         binary = binary_outcome)
     g$effect_size_final <- cond_res$beta
     g$standard_error <- cond_res$se
     g$pvalue <- cond_res$p
     cat("> Marginal estimates, standard errors and p-values were converted to conditional based on LD.\n")
   }
-
-  # p-value thresholding
   prem_SNPs <- unique(g$variant_id[which(g$pvalue > pval_threshold)])
   if (length(prem_SNPs) > 0) {
     g <- subset(g, pvalue <= pval_threshold)
@@ -296,8 +295,6 @@ create_prs <- function (variant_data,
   drop_check(v)
   g <- g[match(colnames(d), g$variant_id), ]
   effectsize <- as.matrix(g$effect_size_final)
-
-  ## convert to score
   prs <- as.matrix(d) %*% effectsize
   cat("> Weighted polygenic score created using", length(effectsize),
       "SNPs.\n")
@@ -316,6 +313,7 @@ create_prs <- function (variant_data,
   rownames(res_list$prs) <- NULL
   res_list$ld_matrix <- LD_dat
   if (nrow(LDtab) > 0) {
+    LDtab2 <- data.frame(row_snps, col_snps)
     res_list$ld_pairs <- LDtab2
   }
   cat("> Returned a list of results with the following dimensions:\n")
@@ -325,12 +323,14 @@ create_prs <- function (variant_data,
                                              units = "secs"), "seconds.\n")
   if (flowchart == TRUE) {
     print(PRISMAstatement::flow_exclusions(incl_counts = c(e[1],
-                                                           e[1] - e[2], e[1] - e[2] - e[3], e[1] - e[2] - e[3] - e[4],
+                                                           e[1] - e[2],
+                                                           e[1] - e[2] - e[3],
+                                                           e[1] - e[2] - e[3] - e[4],
                                                            e[1] - e[2] - e[3] - e[4] - sum(e[5:6]),
                                                            e[1] - e[2] - e[3] - e[4] - sum(e[5:6]) - e[10],
-                                                           e[1] - e[2] - e[3] - e[4] - sum(e[5:6]) - e[10] - e[11],
-                                                           e[1] - e[2] - e[3] - e[4] - sum(e[5:6]) - e[10] - e[11] - e[12]),
-                                           total_label = "Total variants retrieved",
+                                                           e[1] - e[2] - e[3] - e[4] - sum(e[5:6]) - e[10] -
+                                                           e[11], e[1] - e[2] - e[3] - e[4] - sum(e[5:6]) -
+                                                           e[10] - e[11] - e[12]), total_label = "Total variants retrieved",
                                            incl_labels = c("High imputation quality variants",
                                                            "Variants with non-zero variance",
                                                            "Variants reported in GWAS catalog",
@@ -344,7 +344,8 @@ create_prs <- function (variant_data,
                                                            "Missing effect size or risk allele",
                                                            "Variants with extreme effect sizes (99th percentile)",
                                                            "Variants in high LD with other included variants with higher MAF",
-                                                           paste0("Variants with p-value above threshold (", pval_threshold, ")"))))
+                                                           paste0("Variants with p-value above threshold (",
+                                                                  pval_threshold, ")"))))
   }
   invisible(return(res_list))
 }
