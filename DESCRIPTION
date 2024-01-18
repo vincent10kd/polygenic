@@ -1,7 +1,7 @@
 Package: polygenic
 Type: Package
 Title: Efficient and User-friendly P+T Polygenic Risk Score Creation with Summary Statistics
-Version: 0.2.0
+Version: 0.8.0
 Author: Vincent ten Cate, PhD
 Maintainer: Vincent ten Cate, PhD <vincent10kd@gmail.com>
 Description: An efficient and user-friendly pipeline to retrieve trait-related genetic variants 

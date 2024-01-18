@@ -38,7 +38,7 @@ create_prs <- function (variant_data,
                         pruning_threshold = 0.75,
                         pval_threshold = 5e-08,
                         conditional = FALSE,
-                        cond_window = 1e+07,
+                        cond_window = 35000,
                         cond_N = 60000,
                         ridge = FALSE,
                         lambda = 0,
@@ -256,6 +256,7 @@ create_prs <- function (variant_data,
   if (conditional) {
     pos <- v$POS
     chr <- v$CHROM
+    g2 <- g
     LD2 <- cor(d)
     for (i in 1:nrow(LD2)) {
       for (j in 1:ncol(LD2)) {
@@ -274,24 +275,54 @@ create_prs <- function (variant_data,
         else next
       }
     }
-    se <- g$standard_error
-    sds <- diag(sqrt(diag(cov(d))))
-    covX <- sds %*% LD2 %*% sds
-    if(ridge == FALSE){
-      cond_res <- marg2con(marginal_coefs = g$effect_size_final,
-                           covX = covX, N = cond_N, estimate_se = TRUE, marginal_se = se,
-                           binary = binary_outcome)
-      g$effect_size_final <- cond_res$beta
-      g$standard_error <- cond_res$se
-      g$pvalue <- cond_res$p
-      cat("> Marginal estimates, standard errors and p-values were converted to conditional based on LD.\n")
-    }
-    else{
-      cond_res <- marg2con(marginal_coefs = g$effect_size_final,
-                           covX = covX, N = cond_N, ridge = ridge, lambda = lambda,
-                           binary = binary_outcome)
-      g$effect_size_final <- cond_res$beta
-      cat("> Marginal estimates were converted to conditional based on LD, and ridge regularization was applied.\n")
+
+    # adjust the estimates SNP-wise to prevent large matrix inversions
+    for(r in 1:nrow(g)){
+
+      snp <- g$variant_id[r]
+      snp_cor <- LD2[r,]
+      out <- sum(snp_cor != 0 & snp_cor != 1)
+      # if none are correlated, skip to next
+      if(out == 0) next
+      # else, adjust the coefficient just by those that are
+      else adj <- which(snp_cor != 0 & snp_cor !=1)
+      ind <- c(r,adj)
+      snps <- g$variant_id[ind]
+
+      # take only the relevant se, sd, LD matrix
+      se <- ifelse(is.na(g2$standard_error[ind]),
+                   abs(g2$effect_size[ind]/qnorm(g2$pvalue[ind]/2)), g2$standard_error[ind])
+      if(sum(is.na(se)|is.nan(se))>0){
+        cat('> One or several standard errors was missing, conditional analysis was skipped for this estimate.\n')
+        next
+      }
+      sds <- diag(sqrt(diag(cov(d[, ind]))))
+      LDsm <- LD2[ind, ind]
+      marg_beta <- g2$effect_size_final[ind]
+
+      covX <- sds %*% LDsm %*% sds
+
+      if(ridge == FALSE){
+        cond_res <- invisible(marg2con(marginal_coefs = marg_beta,
+                                       covX = covX, N = cond_N, estimate_se = TRUE, marginal_se = se,
+                                       binary = binary_outcome))
+        if(sum(is.nan(cond_res$se))>0){
+          cat('> One or several standard errors was missing, conditional analysis was skipped for this estimate.\n')
+          next
+        }
+        g$effect_size_final[r] <- cond_res$beta[1]
+        g$standard_error[r] <- cond_res$se[1]
+        g$pvalue[r] <- cond_res$p[1]
+        cat("> Marginal estimates, standard errors and p-values were converted to conditional based on LD.\n")
+      }
+
+      else{
+        cond_res <- invisible(marg2con(marginal_coefs = marg_beta,
+                                       covX = covX, N = cond_N, ridge = ridge, lambda = lambda,
+                                       binary = binary_outcome))
+        g$effect_size_final[r] <- cond_res$beta[1]
+        cat("> Marginal estimates were converted to conditional based on LD, and ridge regularization was applied.\n")
+      }
     }
   }
   prem_SNPs <- unique(g$variant_id[which(g$pvalue > pval_threshold)])
