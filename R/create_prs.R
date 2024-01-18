@@ -12,7 +12,7 @@
 #' @param LDplot If TRUE, plots the LD matrix (squared correlation matrix of variants).
 #' @param pruning_threshold Variants in LD >= pruning_threshold with other variants are removed, keeping higher MAF variants.
 #' @param pval_threshold Variants with GWAS p-values > pval_threshold are discarded. Set to 1 to turn off.
-#' @param conditional If TRUE, uses marg2con() to create decorrelate variants in LD if these are within a given bp distance on the same chromosome.
+#' @param conditional If TRUE, uses marg2con() to decorrelate variants in LD if these are within a given bp distance on the same chromosome.
 #' @param cond_window A genomic distance within which to decorrelate variants in LD, in base pair.
 #' @param cond_N The sample size of the original GWAS from which the marginal estimates were derived, or an approximation of it.
 #' @param ridge If TRUE, applies a ridge penalty. This only applies when conditional is set to TRUE.

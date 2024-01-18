@@ -42,7 +42,7 @@ create_prs(
 
 \item{pval_threshold}{Variants with GWAS p-values > pval_threshold are discarded. Set to 1 to turn off.}
 
-\item{conditional}{If TRUE, uses marg2con() to create decorrelate variants in LD if these are within a given bp distance on the same chromosome.}
+\item{conditional}{If TRUE, uses marg2con() to decorrelate variants in LD if these are within a given bp distance on the same chromosome.}
 
 \item{cond_window}{A genomic distance within which to decorrelate variants in LD, in base pair.}
 
