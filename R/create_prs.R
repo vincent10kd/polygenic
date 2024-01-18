@@ -282,8 +282,19 @@ create_prs <- function (variant_data,
       snp <- g$variant_id[r]
       snp_cor <- LD2[r,]
       out <- sum(snp_cor != 0 & snp_cor != 1)
-      # if none are correlated, skip to next
-      if(out == 0) next
+      # if none are correlated, skip to next; but apply ridge as needed
+      if(out == 0){
+        if(ridge){
+          sds <- sd(d[, r])
+          marg_beta <- c(g2$effect_size_final[r], 0)
+          covX <- diag(c(sds, 0))
+          cond_res <- marg2con(marginal_coefs = marg_beta,
+                               covX = covX, N = cond_N, ridge = ridge, lambda = lambda,
+                               binary = binary_outcome)
+          g$effect_size_final[r] <- cond_res$beta[1]
+        }
+        else next
+      }
       # else, adjust the coefficient just by those that are
       else adj <- which(snp_cor != 0 & snp_cor !=1)
       ind <- c(r,adj)
@@ -303,9 +314,9 @@ create_prs <- function (variant_data,
       covX <- sds %*% LDsm %*% sds
 
       if(ridge == FALSE){
-        cond_res <- invisible(marg2con(marginal_coefs = marg_beta,
-                                       covX = covX, N = cond_N, estimate_se = TRUE, marginal_se = se,
-                                       binary = binary_outcome))
+        cond_res <- marg2con(marginal_coefs = marg_beta,
+                             covX = covX, N = cond_N, estimate_se = TRUE, marginal_se = se,
+                             binary = binary_outcome)
         if(sum(is.nan(cond_res$se))>0){
           cat('> One or several standard errors was missing, conditional analysis was skipped for this estimate.\n')
           next
@@ -317,9 +328,9 @@ create_prs <- function (variant_data,
       }
 
       else{
-        cond_res <- invisible(marg2con(marginal_coefs = marg_beta,
-                                       covX = covX, N = cond_N, ridge = ridge, lambda = lambda,
-                                       binary = binary_outcome))
+        cond_res <- marg2con(marginal_coefs = marg_beta,
+                             covX = covX, N = cond_N, ridge = ridge, lambda = lambda,
+                             binary = binary_outcome)
         g$effect_size_final[r] <- cond_res$beta[1]
         cat("> Marginal estimates were converted to conditional based on LD, and ridge regularization was applied.\n")
       }
