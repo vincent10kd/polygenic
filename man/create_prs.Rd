@@ -15,8 +15,10 @@ create_prs(
   pruning_threshold = 0.75,
   pval_threshold = 5e-08,
   conditional = FALSE,
-  cond_window = 1e+07,
+  cond_window = 35000,
   cond_N = 60000,
+  ridge = FALSE,
+  lambda = 0,
   scale = FALSE,
   flowchart = TRUE
 )
@@ -45,6 +47,10 @@ create_prs(
 \item{cond_window}{A genomic distance within which to decorrelate variants in LD, in base pair.}
 
 \item{cond_N}{The sample size of the original GWAS from which the marginal estimates were derived, or an approximation of it.}
+
+\item{ridge}{If TRUE, applies a ridge penalty. This only applies when conditional is set to TRUE.}
+
+\item{lambda}{The parameter controlling the degree of ridge regularization.}
 
 \item{scale}{Centers and standardizes the polygenic risk score if TRUE.}
 

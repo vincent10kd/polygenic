@@ -15,6 +15,8 @@ marg2con(
   estimate_se = FALSE,
   y = NULL,
   varY = NULL,
+  ridge = FALSE,
+  lambda = 0,
   binary = FALSE,
   caseprop = 0.25
 )
@@ -39,6 +41,10 @@ marg2con(
 \item{y}{A continuous or binary response vector. If provided together with X, standard OLS is fit to obtain the estimates.}
 
 \item{varY}{The variance of the response vector. Is estimated if not provided.}
+
+\item{ridge}{If TRUE, applies a ridge penalty.}
+
+\item{lambda}{The parameter controlling the degree of (ridge) regularization.}
 
 \item{binary}{If TRUE, assumes that marginal_coefs are log odds ratios and that the standard errors should be estimated based on a different variance approximation for the response vector.}
 
