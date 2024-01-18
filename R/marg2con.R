@@ -66,6 +66,7 @@ marg2con <- function(marginal_coefs,
   }
 
   if(ridge){
+    X2 <- cbind(1,X)
     lambdaI <- lambda * diag(ncol(X2))
     cond <- solve(covX + lambdaI) %*% diag(diag(covX)) %*% beta
     cat('\n Ridge-regularized conditional estimates from marginal estimates and covariance matrix:\n')
