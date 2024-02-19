@@ -11,12 +11,15 @@ create_prs(
   imp_threshold = 0.8,
   binary_outcome = TRUE,
   exclude_extreme_associations = TRUE,
+  maf_filter = 0.001,
   LDplot = FALSE,
   pruning_threshold = 0.75,
+  pruning_filter = "p",
   pval_threshold = 5e-08,
   conditional = FALSE,
   cond_window = 35000,
   cond_N = 60000,
+  cond_stepwise = TRUE,
   ridge = FALSE,
   lambda = 0,
   scale = FALSE,
@@ -36,9 +39,13 @@ create_prs(
 
 \item{exclude_extreme_associations}{If TRUE, removes variants with an odds ratio > 5 or <1/5.}
 
+\item{maf_filter}{Variants with a MAF below the specified threshold are filtered.}
+
 \item{LDplot}{If TRUE, plots the LD matrix (squared correlation matrix of variants).}
 
-\item{pruning_threshold}{Variants in LD >= pruning_threshold with other variants are removed, keeping higher MAF variants.}
+\item{pruning_threshold}{Variants in LD >= pruning_threshold with other variants are removed.}
+
+\item{pruning_filter}{The criterion by which to keep one variant of a high LD pair. By default, it keeps the variant with the lower p-value, but keeping the variant with higher MAF is also possible.}
 
 \item{pval_threshold}{Variants with GWAS p-values > pval_threshold are discarded. Set to 1 to turn off.}
 
@@ -47,6 +54,8 @@ create_prs(
 \item{cond_window}{A genomic distance within which to decorrelate variants in LD, in base pair.}
 
 \item{cond_N}{The sample size of the original GWAS from which the marginal estimates were derived, or an approximation of it.}
+
+\item{cond_stepwise}{If TRUE, iteratively applies conditional analysis conditioning on the top variant within the specified window, each time removing variants for which p > pval_threshold, until only conditionally independent variants remain. When set to FALSE, conditional joint analysis (i.e. of several variants jointly) is applied within the specified window.}
 
 \item{ridge}{If TRUE, applies a ridge penalty. This only applies when conditional is set to TRUE.}
 

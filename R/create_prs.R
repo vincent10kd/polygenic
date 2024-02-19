@@ -9,12 +9,15 @@
 #' @param imp_threshold Imputation quality threshold, based on R^2. Any variant with lower imputation R^2 is removed.
 #' @param binary_outcome Set to TRUE for binary traits, and FALSE for continuous outcomes (including pQTLs).
 #' @param exclude_extreme_associations If TRUE, removes variants with an odds ratio > 5 or <1/5.
+#' @param maf_filter Variants with a MAF below the specified threshold are filtered.
 #' @param LDplot If TRUE, plots the LD matrix (squared correlation matrix of variants).
-#' @param pruning_threshold Variants in LD >= pruning_threshold with other variants are removed, keeping higher MAF variants.
+#' @param pruning_threshold Variants in LD >= pruning_threshold with other variants are removed.
+#' @param pruning_filter The criterion by which to keep one variant of a high LD pair. By default, it keeps the variant with the lower p-value, but keeping the variant with higher MAF is also possible.
 #' @param pval_threshold Variants with GWAS p-values > pval_threshold are discarded. Set to 1 to turn off.
 #' @param conditional If TRUE, uses marg2con() to decorrelate variants in LD if these are within a given bp distance on the same chromosome.
 #' @param cond_window A genomic distance within which to decorrelate variants in LD, in base pair.
 #' @param cond_N The sample size of the original GWAS from which the marginal estimates were derived, or an approximation of it.
+#' @param cond_stepwise If TRUE, iteratively applies conditional analysis conditioning on the top variant within the specified window, each time removing variants for which p > pval_threshold, until only conditionally independent variants remain. When set to FALSE, conditional joint analysis (i.e. of several variants jointly) is applied within the specified window.
 #' @param ridge If TRUE, applies a ridge penalty. This only applies when conditional is set to TRUE.
 #' @param lambda The parameter controlling the degree of ridge regularization.
 #' @param scale Centers and standardizes the polygenic risk score if TRUE.
@@ -34,12 +37,15 @@ create_prs <- function (variant_data,
                         imp_threshold = 0.8,
                         binary_outcome = TRUE,
                         exclude_extreme_associations = TRUE,
+                        maf_filter = 0.001,
                         LDplot = FALSE,
                         pruning_threshold = 0.75,
+                        pruning_filter = 'p',
                         pval_threshold = 5e-08,
                         conditional = FALSE,
                         cond_window = 35000,
                         cond_N = 60000,
+                        cond_stepwise = TRUE,
                         ridge = FALSE,
                         lambda = 0,
                         scale = FALSE,
@@ -167,9 +173,9 @@ create_prs <- function (variant_data,
     radf$complement_base_vcf_ref[i] <- ifelse(is.null(s3), NA, s3)
   }
   radf$different <- radf$risk_allele_gwas != radf$risk_allele_vcf &
-                    radf$complement_base_gwas != radf$risk_allele_vcf
+    radf$complement_base_gwas != radf$risk_allele_vcf
   radf$same_as_ref <- radf$risk_allele_gwas == radf$ref_allele_vcf |
-                      radf$risk_allele_gwas == radf$complement_base_vcf_ref
+    radf$risk_allele_gwas == radf$complement_base_vcf_ref
   radf$reverse_sign <- ifelse(radf$different == FALSE, 0, 1)
   reverse_sign_SNPs <- rownames(radf)[which(radf$reverse_sign == 1)]
   cat(">", length(reverse_sign_SNPs), "variants had opposite risk allele coding with the GWAS catalog.\n")
@@ -198,66 +204,99 @@ create_prs <- function (variant_data,
   }
   d <- variant_data$gt
   d <- d[, which(colnames(d) %in% unique_variants)]
+
+  ## MAF filter
+  all_snps <- colnames(d)
+  mafs <- sapply(d[, all_snps],function(x) sum(x)/(2 * length(x)))
+  mafs <- ifelse(mafs > 0.5, 1 - mafs, mafs)
+  snp_maf <- data.frame(all_snps, mafs)
+  snp_keep <- subset(snp_maf, mafs >= maf_filter)
+  g <- subset(g, variant_id %in% snp_keep$all_snps)
+  v <- subset(v, ID %in% snp_keep$all_snps)
+  if (nrow(snp_keep) > 0) {
+    cat("> Dropped", nrow(snp_maf) - nrow(snp_keep), "variants with MAF below threshold.\n")
+  }
+  e$maf_filter_dropped <- nrow(snp_maf) - nrow(snp_keep)
+  unique_variants <- v$ID
+  drop_check(v)
+  d <- variant_data$gt
+  d <- d[, which(colnames(d) %in% unique_variants)]
+
+  ## start pruning
   LD_dat <- cor(d)
   LD <- LD_dat
   if (LDplot == TRUE) {
     heatmap(LD)
   }
-
-  # LD pruning loop
   pruning_done <- FALSE
   pruned_set <- c()
-
-  while(pruning_done == FALSE){
-    # check against threshold
+  pruning_counter <- 0
+  while (pruning_done == FALSE) {
+    pruning_counter <- pruning_counter + 1
+    cat('> Pruning round',pruning_counter,'..\n')
     LD <- cor(d)
-    LD2 <- round(LD^2,2)
-    LD2 <- LD2*lower.tri(LD2)
-    LDtab <- which(LD2 > pruning_threshold, arr.ind=T)
+    LD2 <- round(LD^2, 2)
+    LD2 <- LD2 * lower.tri(LD2)
+    LDtab <- which(LD2 > pruning_threshold, arr.ind = T)
+    row_snps <- rownames(LD2)[LDtab[, 1]]
+    col_snps <- rownames(LD2)[LDtab[, 2]]
 
-    # identify SNPs
-    row_snps <- rownames(LD2)[LDtab[,1]]
-    col_snps <- rownames(LD2)[LDtab[,2]]
+    ## Prune based on p-value, else based on MAF
+    if(pruning_filter == 'p'){
+      row_p <- col_p <- length(row_snps)
+      for(i in 1:length(row_snps)){
+        row_p[i] <- min(g$pvalue[g$variant_id == row_snps[i]], na.rm=TRUE)
+        col_p[i] <- min(g$pvalue[g$variant_id == col_snps[i]], na.rm=TRUE)
+      }
+      p_df <- data.frame(row_p, col_p)
+      which_min <- unlist(apply(p_df, 1, which.min))
+      which_keep <- unique(ifelse(which_min == 1, row_snps,
+                                  col_snps))
+    }
+    else{
+      if(pruning_filter!='maf'){cat('Pruning filter not recognized, pruning based on MAF..\n')}
 
-    # retrieve corresponding MAFs
-    row_mafs <- ifelse(length(row_snps)>1, sapply(d[,row_snps],function(x) sum(x)/(2*length(x))), sum(d[,row_snps])/(2*length(d[,row_snps])))
-    row_mafs <- ifelse(row_mafs > 0.5, 1-row_mafs, row_mafs)
-    col_mafs <- ifelse(length(col_snps)>1, sapply(d[,col_snps],function(x) sum(x)/(2*length(x))), sum(d[,col_snps])/(2*length(d[,col_snps])))
-    col_mafs <- ifelse(col_mafs > 0.5, 1-col_mafs, col_mafs)
-    # identify first max
-    maf_df <- data.frame(row_mafs, col_mafs)
-    which_max <- unlist(apply(maf_df, 1, which.max))
-
-    # throw out lower MAF variant of the pair
-    which_keep <- unique(ifelse(which_max == 1, row_snps, col_snps))
+      if(length(row_snps)>1){
+        row_mafs <- sapply(d[, row_snps], function(x) sum(x)/(2 * length(x)))
+      }
+      else{row_mafs <- sum(d[,row_snps])/(2*length(d[,row_snps]))}
+      row_mafs <- ifelse(row_mafs > 0.5, 1 - row_mafs, row_mafs)
+      if(length(col_snps)>1){
+        col_mafs <- sapply(d[, col_snps], function(x) sum(x)/(2 * length(x)))
+      }
+      else{col_mafs <- sum(d[,col_snps])/(2*length(d[,col_snps]))}
+      col_mafs <- ifelse(col_mafs > 0.5, 1 - col_mafs, col_mafs)
+      maf_df <- data.frame(row_mafs, col_mafs)
+      which_max <- unlist(apply(maf_df, 1, which.max))
+      which_keep <- unique(ifelse(which_max == 1, row_snps,
+                                  col_snps))
+    }
     remove_SNPs <- setdiff(union(row_snps, col_snps), which_keep)
     pruned_set <- c(pruned_set, remove_SNPs)
-
-    # update SNP set
     d[, remove_SNPs] <- NULL
     v <- v[!v$ID %in% remove_SNPs, ]
     g <- subset(g, !variant_id %in% remove_SNPs)
-
-    # check against threshold
     LD <- cor(d)
-    LD2 <- round(LD^2,2)
-    LD2 <- LD2*lower.tri(LD2)
-    LDtab <- which(LDtab > pruning_threshold, arr.ind=T)
-
-    if(nrow(LDtab)==0) pruning_done <- TRUE
+    LD2 <- round(LD^2, 2)
+    LD2 <- LD2 * lower.tri(LD2)
+    LDtab <- which(LDtab > pruning_threshold, arr.ind = T)
+    if (nrow(LDtab) == 0)
+      pruning_done <- TRUE
   }
-
   cat("> Dropped ", length(pruned_set), " variants in high LD (R^2>=",
       pruning_threshold, ") with other variants.\n", sep = "")
   e$high_LD_snps_pruned <- length(pruned_set)
   drop_check(v)
 
-  ## conditional estimates
+  # conditional analysis
   if (conditional) {
     pos <- v$POS
     chr <- v$CHROM
+    g <- g[match(colnames(d), g$variant_id), ]
     g2 <- g
-    LD2 <- cor(d)
+    d2 <- d
+
+    LD2 <- cor(d2)
     for (i in 1:nrow(LD2)) {
       for (j in 1:ncol(LD2)) {
         chr_i <- chr[i]
@@ -276,73 +315,152 @@ create_prs <- function (variant_data,
       }
     }
 
-    # adjust the estimates SNP-wise to prevent large matrix inversions
-    for(r in 1:nrow(g)){
+    if(cond_stepwise == FALSE){
 
-      snp <- g$variant_id[r]
-      snp_cor <- LD2[r,]
-      out <- sum(snp_cor != 0 & snp_cor != 1)
-      # if none are correlated, skip to next; but apply ridge as needed
-      if(out == 0){
-        if(ridge){
-          sds <- sd(d[, r])
-          marg_beta <- c(g2$effect_size_final[r], 0)
-          covX <- diag(c(sds, 0))
+      for (r in 1:nrow(g)) {
+        snp <- g$variant_id[r]
+        snp_cor <- LD2[r, ]
+        out <- sum(snp_cor != 0 & snp_cor != 1)
+
+        if (out == 0) {
+          if (ridge) {
+            sds <- sd(d[, r])
+            marg_beta <- c(g2$effect_size_final[r], 0)
+            covX <- diag(c(sds, 0))
+            cond_res <- marg2con(marginal_coefs = marg_beta,
+                                 covX = covX, N = cond_N, ridge = ridge, lambda = lambda,
+                                 binary = binary_outcome)
+            g$effect_size_final[r] <- cond_res$beta[1]
+          }
+          else next
+        }
+        else adj <- which(snp_cor != 0 & snp_cor != 1)
+        ind <- c(r, adj)
+        snps <- g$variant_id[ind]
+        se <- ifelse(is.na(g2$standard_error[ind]), abs(g2$effect_size[ind]/qnorm(g2$pvalue[ind]/2)),
+                     g2$standard_error[ind])
+
+        if (sum(is.na(se) | is.nan(se)) > 0) {
+          cat("> One or several standard errors was missing, conditional analysis was skipped for this estimate.\n")
+          next
+        }
+
+        marg_beta <- g2$effect_size_final[ind]
+        covX <- cov(d2)[ind, ind]
+        if (ridge == FALSE) {
+          cond_res <- marg2con(marginal_coefs = marg_beta,
+                               covX = covX, N = cond_N, estimate_se = TRUE,
+                               marginal_se = se, binary = binary_outcome)
+          if (sum(is.nan(cond_res$se)) > 0) {
+            cat("> One or several standard errors was missing, conditional analysis was skipped for this estimate.\n")
+            next
+          }
+          g$effect_size_final[r] <- cond_res$beta[1]
+          g$standard_error[r] <- cond_res$se[1]
+          g$pvalue[r] <- cond_res$p[1]
+          cat("> Marginal estimates, standard errors and p-values were converted to conditional based on LD.\n")
+        }
+        else {
           cond_res <- marg2con(marginal_coefs = marg_beta,
                                covX = covX, N = cond_N, ridge = ridge, lambda = lambda,
                                binary = binary_outcome)
           g$effect_size_final[r] <- cond_res$beta[1]
+          cat("> Marginal estimates were converted to conditional based on LD, and ridge regularization was applied.\n")
         }
-        else next
       }
-      # else, adjust the coefficient just by those that are
-      else adj <- which(snp_cor != 0 & snp_cor !=1)
-      ind <- c(r,adj)
-      snps <- g$variant_id[ind]
+    }
 
-      # take only the relevant se, sd, LD matrix
-      se <- ifelse(is.na(g2$standard_error[ind]),
-                   abs(g2$effect_size[ind]/qnorm(g2$pvalue[ind]/2)), g2$standard_error[ind])
-      if(sum(is.na(se)|is.nan(se))>0){
-        cat('> One or several standard errors was missing, conditional analysis was skipped for this estimate.\n')
-        next
-      }
-      sds <- diag(sqrt(diag(cov(d[, ind]))))
-      LDsm <- LD2[ind, ind]
-      marg_beta <- g2$effect_size_final[ind]
+    if(cond_stepwise){
+      prem_SNPs2 <- c()
 
-      covX <- sds %*% LDsm %*% sds
+      ## each time pick the lowest p-val SNP and condition on this
+      ## repeat until no SNPs can be dropped after conditional analysis
+      conditioning_done <- FALSE
+      while(conditioning_done == FALSE){
 
-      if(ridge == FALSE){
-        cond_res <- marg2con(marginal_coefs = marg_beta,
-                             covX = covX, N = cond_N, estimate_se = TRUE, marginal_se = se,
-                             binary = binary_outcome)
-        if(sum(is.nan(cond_res$se))>0){
-          cat('> One or several standard errors was missing, conditional analysis was skipped for this estimate.\n')
-          next
+        g2 <- subset(g2, variant_id %in% g$variant_id)
+        d2 <- d2[, which(colnames(d2) %in% colnames(d))]
+        g2 <- g2[match(colnames(d2), g2$variant_id), ]
+        LD2 <- cor(d2)
+
+        for (r in 1:nrow(g2)) {
+          snp <- g2$variant_id[r]
+          snp_cor <- LD2[r, ]
+          out <- sum(snp_cor != 0 & snp_cor != 1)
+          if (out == 0) {
+            if (ridge) {
+              sds <- sd(d2[, r])
+              marg_beta <- c(g2$effect_size_final[r], 0)
+              covX <- diag(c(sds, 0))
+              cond_res <- marg2con(marginal_coefs = marg_beta,
+                                   covX = covX, N = cond_N, ridge = ridge, lambda = lambda,
+                                   binary = binary_outcome)
+              g$effect_size_final[r] <- cond_res$beta[1]
+            }
+            else next
+          }
+          else adj <- which(snp_cor != 0 & snp_cor != 1)
+          ind <- c(r, adj)
+          snps <- g2$variant_id[ind]
+          sentinel <- g2$variant_id[adj][which.min(g2$pvalue[adj])]
+          if(length(sentinel)==0) next
+          ind2 <- ind
+          sentinel_ind <- which(g2$variant_id == sentinel[1])
+          ind <- c(r, sentinel_ind)
+
+          se <- ifelse(is.na(g2$standard_error[ind]), abs(g2$effect_size[ind]/qnorm(g2$pvalue[ind]/2)),
+                       g2$standard_error[ind])
+
+          if (sum(is.na(se) | is.nan(se)) > 0) {
+            cat("> One or several standard errors was missing, conditional analysis was skipped for this estimate.\n")
+            next
+          }
+
+          marg_beta <- g2$effect_size_final[ind]
+          covX <- cov(d2[,ind])
+          if (ridge == FALSE) {
+            cond_res <- marg2con(marginal_coefs = marg_beta,
+                                 covX = covX, N = cond_N, estimate_se = TRUE,
+                                 marginal_se = se, binary = binary_outcome)
+            if (sum(is.nan(cond_res$se)) > 0) {
+              cat("> One or several standard errors was missing, conditional analysis was skipped for this estimate.\n")
+              next
+            }
+            g$effect_size_final[r] <- cond_res$beta[1]
+            g$standard_error[r] <- cond_res$se[1]
+            g$pvalue[r] <- cond_res$p[1]
+          }
+          else {
+            cond_res <- marg2con(marginal_coefs = marg_beta,
+                                 covX = covX, N = cond_N, ridge = ridge, lambda = lambda,
+                                 binary = binary_outcome)
+            g$effect_size_final[r] <- cond_res$beta[1]
+            cat("> Marginal estimates were converted to conditional based on LD, and ridge regularization was applied.\n")
+          }
         }
-        g$effect_size_final[r] <- cond_res$beta[1]
-        g$standard_error[r] <- cond_res$se[1]
-        g$pvalue[r] <- cond_res$p[1]
-        cat("> Marginal estimates, standard errors and p-values were converted to conditional based on LD.\n")
-      }
-
-      else{
-        cond_res <- marg2con(marginal_coefs = marg_beta,
-                             covX = covX, N = cond_N, ridge = ridge, lambda = lambda,
-                             binary = binary_outcome)
-        g$effect_size_final[r] <- cond_res$beta[1]
-        cat("> Marginal estimates were converted to conditional based on LD, and ridge regularization was applied.\n")
+        prem_SNPs <- unique(g$variant_id[which(g$pvalue > pval_threshold)])
+        if (length(prem_SNPs) > 0) {
+          prem_SNPs2 <- c(prem_SNPs2, prem_SNPs)
+          g <- subset(g, pvalue <= pval_threshold)
+          d <- d[, -which(colnames(d) %in% prem_SNPs)]
+          v <- subset(v, !ID %in% prem_SNPs)
+        }
+        if (length(prem_SNPs) == 0){
+          conditioning_done <- TRUE
+        }
       }
     }
   }
+
   prem_SNPs <- unique(g$variant_id[which(g$pvalue > pval_threshold)])
   if (length(prem_SNPs) > 0) {
     g <- subset(g, pvalue <= pval_threshold)
     d <- d[, -which(colnames(d) %in% prem_SNPs)]
     v <- subset(v, !ID %in% prem_SNPs)
   }
-  cat("> Removed ", length(prem_SNPs), " variants by p-value thresholding (threshold=", pval_threshold, ")\n", sep = "")
+  if(cond_stepwise) prem_SNPs <- c(prem_SNPs, prem_SNPs2)
+  cat("> Removed ", length(prem_SNPs), " variants by p-value thresholding (threshold=",
+      pval_threshold, ")\n", sep = "")
   e$SNPs_removed_by_pval_thresholding <- length(prem_SNPs)
   remaining_l <- length(unique(v$ID))
   cat(">", remaining_l, "variants remaining.\n")
@@ -378,29 +496,27 @@ create_prs <- function (variant_data,
   if (flowchart == TRUE) {
     print(PRISMAstatement::flow_exclusions(incl_counts = c(e[1],
                                                            e[1] - e[2],
-                                                           e[1] - e[2] - e[3],
-                                                           e[1] - e[2] - e[3] - e[4],
-                                                           e[1] - e[2] - e[3] - e[4] - sum(e[5:6]),
-                                                           e[1] - e[2] - e[3] - e[4] - sum(e[5:6]) - e[10],
-                                                           e[1] - e[2] - e[3] - e[4] - sum(e[5:6]) - e[10] -
-                                                           e[11], e[1] - e[2] - e[3] - e[4] - sum(e[5:6]) -
-                                                           e[10] - e[11] - e[12]), total_label = "Total variants retrieved",
+                                                           e[1] - sum(e[2:3]),
+                                                           e[1] - sum(e[2:4]),
+                                                           e[1] - sum(e[2:6]),
+                                                           e[1] - sum(e[2:6]) - e[10],
+                                                           e[1] - sum(e[2:6]) - sum(e[10:11]),
+                                                           e[1] - sum(e[2:6]) - sum(e[10:12]),
+                                                           e[1] - sum(e[2:6]) - sum(e[10:13])),
+                                           total_label = "Total variants retrieved",
                                            incl_labels = c("High imputation quality variants",
-                                                           "Variants with non-zero variance",
-                                                           "Variants reported in GWAS catalog",
-                                                           "Variants with complete information",
-                                                           "Variants with non-extreme effect sizes",
-                                                           "Variants sufficiently independent",
-                                                           "Variants used in the weighted score"),
-                                           excl_labels = c(paste0("Low imputation quality (R^2<", imp_threshold, ")"),
-                                                           "Variants with zero variance in the data",
+                                                           "Variants with non-zero variance", "Variants reported in GWAS catalog",
+                                                           "Variants with complete information", "Variants with non-extreme effect sizes",
+                                                           "Variants with sufficiently high MAF",
+                                                           "Variants sufficiently independent", "Variants used in the weighted score"),
+                                           excl_labels = c(paste0("Low imputation quality (R^2<",
+                                                                  imp_threshold, ")"), "Variants with zero variance in the data",
                                                            "Variants not found in GWAS catalog information",
-                                                           "Missing effect size or risk allele",
-                                                           "Variants with extreme effect sizes (99th percentile)",
-                                                           "Variants in high LD with other included variants with higher MAF",
+                                                           "Missing effect size or risk allele", "Variants with extreme effect sizes (99th percentile)",
+                                                           paste0("Variants with MAF below the filter (",maf_filter,")"),
+                                                           paste0("Variants in high LD (>",pruning_threshold,") with other included variants"),
                                                            paste0("Variants with p-value above threshold (",
                                                                   pval_threshold, ")"))))
   }
   invisible(return(res_list))
 }
-
