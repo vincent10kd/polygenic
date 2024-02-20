@@ -458,7 +458,7 @@ create_prs <- function (variant_data,
     d <- d[, -which(colnames(d) %in% prem_SNPs)]
     v <- subset(v, !ID %in% prem_SNPs)
   }
-  if(cond_stepwise) prem_SNPs <- c(prem_SNPs, prem_SNPs2)
+  if(conditional & cond_stepwise) prem_SNPs <- c(prem_SNPs, prem_SNPs2)
   cat("> Removed ", length(prem_SNPs), " variants by p-value thresholding (threshold=",
       pval_threshold, ")\n", sep = "")
   e$SNPs_removed_by_pval_thresholding <- length(prem_SNPs)
